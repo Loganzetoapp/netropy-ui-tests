@@ -86,7 +86,14 @@ def test_t10_t12_lifecycle_udp_1gbps_1500b(dashboard: Page, clean_testbed):
         expect(row.get_by_text("Reserved", exact=True)).to_be_visible(timeout=10000)
 
     # --- Create testbed ---
-    page.get_by_role("button", name="✚ Create Testbed").click()
+    # BUG FOUND 2026-08-25: the product added a collapsible section header
+    # (div role="button", aria-expanded, class "hdr-toggle") around the
+    # Testbeds section at some point since this test was last run. Its
+    # accessible name concatenates the whole section's text, so a
+    # non-exact match on "✚ Create Testbed" now also matches that header
+    # (strict-mode violation, 2 elements). Use exact=True to get just the
+    # real button.
+    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
     _buffer(page)
     page.get_by_role("button", name="Traffic Engine").click()
     _buffer(page)
