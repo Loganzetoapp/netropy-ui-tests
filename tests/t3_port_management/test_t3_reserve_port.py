@@ -1,7 +1,11 @@
-"""T3 port management — reservation lifecycle.
+"""T3 port management — reserve a port updates status and Reserved By.
 
-Port state is global on shared hardware: every test must release what it
-reserves, even on failure, so the fixture teardown always attempts a release.
+Standalone split of one test from test_t3_port_management_all.py so it
+can run in isolation; see that file for the full combined T3 suite.
+
+Port state is global on shared hardware: this test must release what it
+reserves, even on failure, so the fixture teardown always attempts a
+release.
 """
 import pytest
 from playwright.sync_api import Page, expect
@@ -32,14 +36,3 @@ def test_t3_reserve_port_updates_status_and_reserved_by(available_port_row):
     expect(row.get_by_text("Reserved", exact=True)).to_be_visible()
     expect(row).to_contain_text("test")
     expect(row.get_by_role("button", name="Release")).to_be_visible()
-
-
-@pytest.mark.stateful
-def test_t3_release_port_returns_to_available(available_port_row):
-    row = available_port_row
-    row.get_by_role("button", name="Reserve").click()
-    expect(row.get_by_role("button", name="Release")).to_be_visible()
-
-    row.get_by_role("button", name="Release").click()
-    expect(row.get_by_text("Available", exact=True)).to_be_visible()
-    expect(row.get_by_role("button", name="Reserve")).to_be_visible()
