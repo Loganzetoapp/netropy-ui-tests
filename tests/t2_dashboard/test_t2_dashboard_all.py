@@ -1,4 +1,12 @@
-"""T2 dashboard smoke tests — also serve as the environment sanity check.
+"""T2 dashboard smoke tests — combined suite.
+
+All 3 T2 tests together in one file, for a single at-a-glance run of the
+whole feature area. Each test also exists standalone in its own file
+(test_t2_dashboard_loads.py, test_t2_port_table_has_8_rows.py,
+test_t2_licenses_section_shows_gating.py) so it can be run in isolation —
+this means every T2 test runs twice under the default markers (once
+here, once standalone), which is intentional: same coverage, and T2 is
+cheap enough that the extra runtime doesn't matter.
 
 If these pass, auth, fixtures, and connectivity all work.
 """
