@@ -1,4 +1,12 @@
-"""T1 authentication and session lifecycle.
+"""T1 authentication and session lifecycle — combined suite.
+
+All 4 T1 tests together in one file, for a single at-a-glance run of the
+whole feature area. Each test also exists standalone in its own file
+(test_t1_valid_login.py, test_t1_invalid_password.py, test_t1_logout.py,
+test_t1_concurrent_sessions.py) so it can be run in isolation — this means
+every T1 test runs twice under the default markers (once here, once
+standalone), which is intentional: same coverage, and T1 is cheap enough
+that the extra runtime doesn't matter.
 
 These tests exercise login/logout directly, so they use a fresh browser
 context instead of the session-authenticated `page`/`dashboard` fixtures —
