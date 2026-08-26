@@ -59,6 +59,14 @@ def _release_ports(page: Page):
     dashboard_btn = page.get_by_role("button", name="← Dashboard")
     if dashboard_btn.is_visible():
         dashboard_btn.click()
+        _buffer(page)
+        # A failure mid-wizard (before Apply/Save) leaves unsaved edits, so
+        # navigating away pops an "Unsaved changes" confirm modal
+        # (Discard / Save & close / Keep editing) that blocks the plain
+        # click above from actually landing on the dashboard.
+        discard_btn = page.get_by_role("button", name="Discard", exact=True)
+        if discard_btn.is_visible():
+            discard_btn.click()
     else:
         page.goto("/")
     expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
