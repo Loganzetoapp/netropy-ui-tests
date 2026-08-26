@@ -50,10 +50,18 @@ def _delete_testbed_if_present(page: Page):
 
 
 def _release_ports(page: Page):
-    # The test may fail mid-wizard, off the dashboard entirely — always
-    # navigate back to it first so the port rows below actually exist.
-    page.goto("/")
-    expect(page.get_by_text("Port Status")).to_be_visible()
+    # The test may fail mid-wizard/mid-activation, off the dashboard
+    # entirely — get back to it first so the port rows below actually
+    # exist. Prefer the SPA's own "← Dashboard" button when it's present
+    # (a hard goto() right after an in-flight activate call can itself
+    # time out / crash teardown — seen 2026-08-25 investigating a slow
+    # activation whose request was still pending when goto() fired).
+    dashboard_btn = page.get_by_role("button", name="← Dashboard")
+    if dashboard_btn.is_visible():
+        dashboard_btn.click()
+    else:
+        page.goto("/")
+    expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
     for port_label in PORTS:
         row = page.get_by_role("row", name=port_label)
         release_btn = row.get_by_role("button", name="Release")
@@ -209,7 +217,12 @@ def test_t10_t12_lifecycle_udp_1gbps_1500b(dashboard: Page, clean_testbed):
     # which incidentally waited out this transition; it wasn't clicking
     # anything functionally meaningful. Wait on "Deactivate" instead — a
     # real, role-addressable button that only exists in the post-Apply bar.
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=30000)
+    # The activate call itself carries a `?wait=15` server-side contract
+    # and can legitimately take longer than that plus UI lag to resolve —
+    # confirmed 2026-08-25: a run that looked "hung" past 30s later turned
+    # out to have actually succeeded, just slower than we'd waited. Give
+    # it real room rather than treating slow-but-working as a failure.
+    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
     page.get_by_role("button", name="Start").click()
 
     # Clicking Start navigates into the Statistics view. A hard page.goto()
