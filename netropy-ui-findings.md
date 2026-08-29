@@ -149,6 +149,16 @@ an answer. Now confirmed.
   "assert the list is empty" or "export with zero profiles" impossible to
   test safely without depending on, or deleting, someone else's saved work —
   both were left unautomated rather than faked.
+- **This box is a dedicated test VM, not a shared appliance with random
+  other users** (confirmed by Logan). This reframes — but doesn't
+  retroactively confirm a specific cause for — a few findings above that
+  speculated about "another user": the recurring Port 5–8 link-down
+  incidents and the stray T9 testbed/profile found during the full-suite
+  run are more likely leftovers from this suite's own earlier or concurrent
+  runs than a genuinely unrelated third party. The suite's caution around
+  shared-state (unique `-DeleteMe` names, never asserting on global counts)
+  stays in place either way — it's cheap insurance regardless of who else
+  might be on the box.
 
 ---
 
@@ -161,25 +171,25 @@ item until it's answered.
    dropped frames on individual ports yet still passed at 0.000% aggregate
    loss. No strict loss-threshold assertions have been written until this is
    confirmed.
-2. **Is this box a shared appliance or a dedicated test VM?** Determines how
-   cautious traffic-generating tests need to be about interfering with other
-   users — and whether the port link-down pattern above could be cross-user
-   interference rather than a product issue.
-3. **Can the frontend add `data-testid` attributes?** Current selectors are
+2. **Can the frontend add `data-testid` attributes?** Current selectors are
    role-based and scoped to row/card, which works, but several controls
    (icon-only buttons, testbed tiles) have no accessible name at all and are
    matched by tooltip text or CSS class as a fallback.
-4. **What does per-port Reset actually do to the link?** Reset All is
+3. **What does per-port Reset actually do to the link?** Reset All is
    already off-limits by policy. Per-port Reset was never confirmed either,
    so no automated test clicks it — same caution, unresolved.
-5. **What's the session timeout length?** The rest of authentication
+4. **What's the session timeout length?** The rest of authentication
    (login, logout, invalid password, concurrent sessions) is covered;
    timeout is the one deliberately-skipped item rather than a guessed value.
-6. **Is a second test account available?** Only one account is configured. A
+5. **Is a second test account available?** Only one account is configured. A
    second browser session on the same account sees an already-reserved port
    as its own, not a conflict — so "reserve a port another user holds →
    blocked with a clear error" can't be reproduced without a genuinely
    separate identity.
+
+Answered since the last pass: **the box is a dedicated test VM**, not a
+shared appliance — see the note under "Network Profiles are shared across
+every user on the box" above.
 
 ---
 
