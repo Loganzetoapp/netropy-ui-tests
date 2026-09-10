@@ -6,8 +6,9 @@ test plan (`netropy-ui-test-plan.md`) didn't match reality, and what's still
 waiting on an answer from Travis. See `netropy-ui-reference.md` for the
 control-by-control UI inventory this was built alongside.
 
-Target: `192.168.173.111:8080`, a shared lab appliance. Suite coverage: all
-13 plan areas (T1–T13), 85 automated tests.
+Target: `192.168.173.111:8080`, a dedicated lab VM (confirmed not shared —
+see "Plan questions the product answered" below). Suite coverage: all 13
+plan areas (T1–T13), 91 automated tests.
 
 ---
 
@@ -43,25 +44,77 @@ burst field genuinely clamps to its declared max of 32.
 `tests/t7_streams/test_t7_frame_size_bounds.py`,
 `tests/t8_traffic_load/test_t8_tx_burst_bandwidth_cap.py`
 
-### Testbed activation intermittently returns 502
-`POST /ctrl/v1/tests/{name}/activate?wait=15` has returned `502 Bad Gateway`
-(`"Remote end closed connection without response"`) on multiple otherwise-
-correct testbeds — the backend failing to reach the underlying traffic-engine
-service, confirmed via network logging, not a frontend or test-script issue.
-No single config variable (line rate, protocol, frame size, port pair, ramp)
-has been shown to deterministically cause or prevent it across repeated
-trials; it reads as genuine intermittency. The activate call can also
-legitimately take 15s+ to resolve even when it succeeds, which is easy to
-mistake for a failure if a script's timeout is too short.
-Status: intermittent, unresolved as of this report.
+### Testbed activation 502s permanently — root cause found: a 15-character name limit
+What looked for weeks like genuine intermittency turned out to be fully
+deterministic. `POST /ctrl/v1/tests/{name}/activate?wait=15` returns `502
+Bad Gateway` (`"Remote end closed connection without response"`) for any
+testbed whose name is **16 characters or longer** — every time, permanently,
+for that object — while a name of 15 characters or fewer activates cleanly,
+every time. Confirmed with a clean boundary test (two names differing by one
+character and a shared prefix: 15 chars → `200`, 16 chars → `502`) and
+reproduced across ports, protocols, and line rates.
 
-### Port links drop to "No Link" after activation — recurring, 3 incidents
-Ports have gone `Down / 0M / No Link` after activation on three separate
+This explains everything that made it look intermittent or automation-
+specific over many earlier investigation sessions: every automated test in
+this suite followed a descriptive naming convention well over 15 characters
+(`T10-T12-Lifecycle-ICMP-5Gbps-64B`, `...-DeleteMe`, etc.), while every
+human-made testbed on the box (`xx`, `TE-01`, `TA`, `Sony_Demo`) happened to
+be short. Extensive earlier elimination work (config content, session
+freshness, save/activate timing, `navigator.webdriver` automation
+fingerprinting, interaction pace) correctly ruled out everything it tested —
+name length just was never isolated as the variable until a dedicated
+boundary test did.
+
+Two things worth fixing on the product side:
+1. **No validation at creation time.** The backend silently accepts and
+   saves a name it can never activate — `POST /ctrl/v1/tests` and the
+   following `PUT` both return success. It should reject or truncate an
+   over-length name at save time, and the wizard's name field has no
+   `maxlength` attribute to stop one from being typed in the first place.
+2. **The frontend shows nothing when activation fails.** Whether the cause
+   is this or the VXLAN issue below, a failed activate leaves the wizard
+   silently stuck on "Apply" forever — no toast, no error text, no retry.
+   The only way to see it's failed at all is to watch network traffic
+   directly. This UX gap is the reason the real cause took this long to
+   isolate.
+
+Status: **root cause confirmed and fixed test-side** (every test that
+activates a testbed now asserts its name is ≤15 characters before trying —
+see `conftest.assert_activatable_name`). Both product-side issues above are
+still open, pending Travis.
+
+### VXLAN: activation succeeds but Start intermittently never begins traffic
+A separate, still-open issue found while adding VXLAN protocol coverage.
+Activation itself works (the testbed goes active, `Deactivate` appears), but
+clicking Start doesn't always actually begin the run — the Statistics view
+shows "Ready to start traffic / Ports are armed and idle" instead of a live
+or finished result. A network-logged repro isolated it: `POST
+/ctrl/v1/tests/{name}/start?wait=15` returned `200` with a **self-
+contradictory body** — `"traffic-running": true` alongside `"datapath-
+state": "IDLE"` in the same response — and the page then became completely
+unresponsive. Seen on 2 of 3 attempts with an identical config; the 3rd ran
+clean end-to-end. Only observed with VXLAN so far (DNS, NTP, ARP, and the
+existing UDP/TCP/ICMP siblings have been reliable). Kept in the suite as
+`xfail(strict=False)` — it documents the bug without blocking the suite
+either way, and would surface as an unexpected pass (not silently) if it
+stops reproducing.
+Status: intermittent, unresolved.
+
+### Port links drop to "No Link" after activation — recurring, 4 incidents
+Ports have gone `Down / 0M / No Link` after activation on four separate
 occasions: Port 5+6 once, Port 7+8 once (both the *first-ever* activation
-attempted on that specific pair), and most recently all of Port 5–8
-simultaneously, found during a full-suite run. Each time, the drop happened
-independent of test-script cleanup — teardown completed normally regardless.
-The two isolated incidents self-recovered; the pattern itself hasn't.
+attempted on that specific pair), all of Port 5–8 simultaneously during a
+full-suite run, and most recently Port 5+6 again after a passing ARP
+lifecycle test. Each time, the drop happened independent of test-script
+cleanup — teardown completed normally regardless, and the triggering test
+itself passed cleanly every time. The most recent incident is the strongest
+data point yet against a config-based explanation: ARP at 10 Mbps is about
+as far as this suite gets from the original (already-retracted) "high line
+rate causes it" theory, and the link still dropped. Three of the four
+incidents have self-recovered on their own within the same session; the
+pattern itself hasn't. Port 5+6 specifically accounts for 3 of the 4
+incidents — worth treating as a real, recurring hardware/driver issue tied
+to that pair rather than a one-off, at this point.
 
 ### Couldn't produce a FAIL result through the UI on this hardware
 Three deliberate attempts to force a failing run on Port 3+4 (wrong
@@ -149,6 +202,21 @@ an answer. Now confirmed.
   "assert the list is empty" or "export with zero profiles" impossible to
   test safely without depending on, or deleting, someone else's saved work —
   both were left unautomated rather than faked.
+- **The "Add Stream" protocol picker offers far more than UDP/TCP/ICMP** —
+  IPv6 variants of all three, DNS and NTP (Application), SIP/RTP/RTCP (VoIP,
+  all three tagged **WIP** in the UI), ARP and Raw Ethernet (Layer 2), and
+  VXLAN (Tunnel). Every protocol creates exactly one stream per "Add
+  Stream" — nothing needs a multi-stream setup. Two things not obvious from
+  the picker's own description, confirmed only by actually creating each
+  stream and reading its resulting layer chips: **DNS and NTP aren't their
+  own layer** — they're plain UDP with a preset destination port (53/123),
+  so their stream row shows a "UDP" chip, not "DNS"/"NTP". And **ARP has no
+  IP layer at all** (`Ethernet → Payload` only, no default ports), yet the
+  wizard's Network Configuration step still renders the full per-port
+  IP/MAC form regardless of protocol — it's generic to the testbed, not
+  stream-aware, so those fields are simply meaningless (and safe to leave
+  at their auto-filled defaults) for an ARP-only stream. See
+  `tests/t10_t12_lifecycle/test_t10_t12_lifecycle_{dns,ntp,arp,vxlan}_*.py`.
 - **This box is a dedicated test VM, not a shared appliance with random
   other users** (confirmed by Logan). This reframes — but doesn't
   retroactively confirm a specific cause for — a few findings above that
@@ -209,7 +277,7 @@ generate real traffic.
 | T7 · Wizard: Streams | Add/delete/clone, frame size, port distribution, layer editor | free |
 | T8 · Wizard: Traffic/Load | Stream-mix rebalancing, ramp math, TX burst/bandwidth cap | free |
 | T9 · Network Profiles | Save from wizard, select-to-populate, export/import | free |
-| T10 · Activation lifecycle | Live badges, dashboard active count, two simultaneous testbeds | stateful |
+| T10 · Activation lifecycle | Live badges, dashboard active count, two simultaneous testbeds, default addressing, stop-mid-run, overload fail-path, 7 protocols (UDP/TCP/ICMP/multi-stream/DNS/NTP/ARP + VXLAN xfail) | stateful |
 | T11 · Live statistics | Metric tabs, scope/signal filters, unit toggle, zoom | stateful |
 | T12 · Reports & exports | Run history, all 5 export formats, delete run, Reports badge | stateful |
 | T13 · Connectivity diagnostics | DHCP Pre-Acq not-supported state (rest deferred, product WIP) | free |
