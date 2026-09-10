@@ -13,7 +13,12 @@ Apply/deactivate.
 import pytest
 from playwright.sync_api import Page, expect
 
-NAME = "T3-ActiveColumns-DeleteMe"
+from conftest import assert_activatable_name
+
+# Testbed name must stay <= 15 chars: the backend can create and save a
+# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
+NAME = "T3-ActiveCols"
+assert_activatable_name(NAME)
 PORTS = ["Port 1", "Port 2"]
 
 
@@ -111,6 +116,7 @@ def test_t3_reserved_by_and_test_name_populate_on_activation(
         expect(row.get_by_text("Reserved", exact=True)).to_be_visible()
         expect(row).to_contain_text("test (you)")
         # The Test Name column truncates in the DOM itself (not just
-        # visually via CSS) — confirmed "T3-ActiveColumns-DeleteMe" comes
-        # through as "T3-ActiveColumn" (15 chars), so match a prefix.
+        # visually via CSS) at 15 chars — the same backend name limit
+        # that 502s activate for longer names, so the slice is a no-op
+        # now that NAME is within it, but keeps the guard explicit.
         expect(row).to_contain_text(NAME[:15])

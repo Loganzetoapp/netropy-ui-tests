@@ -23,7 +23,12 @@ import json
 import pytest
 from playwright.sync_api import Page, expect
 
-NAME = "T12-RunHistory-DeleteMe"
+from conftest import assert_activatable_name
+
+# Testbed name must stay <= 15 chars: the backend can create and save a
+# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
+NAME = "T12-RunHistory"
+assert_activatable_name(NAME)
 PORTS = ["Port 1", "Port 2"]
 
 

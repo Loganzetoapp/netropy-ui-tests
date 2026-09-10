@@ -39,3 +39,36 @@ their plan area, e.g. `test_t6_subnet_25_computes_126_clients`.
   selector or the test, re-run. If the failure looks like a product bug,
   stop and report it to the user instead of changing the test to pass.
 - A test must pass 3 consecutive runs before it's considered done.
+
+## Results dashboard
+Every `pytest` run writes a small summary to `results/history/<run-id>.json`
+(committed — see .gitignore) and rebuilds `results/index.html` automatically
+(a conftest.py hook; zero extra steps). Open `results/index.html` directly
+in a browser (file://, no server) to see: latest run status, a 30-run
+trend chart, per-test stability across back-to-back runs on one commit,
+a flaky-test ranking across all history, the 10 slowest tests with a
+trend arrow, and this run's failures with links to their screenshots.
+Rebuild by hand from existing history (no test run) with `make report` or
+`python scripts/build_report.py`.
+
+**Stability run** — the deliberate way to populate the "Stability
+sessions" section for a commit (rather than relying on it filling in
+incidentally): run the same marker set N times back-to-back *without
+changing anything in between*, so every run shares one git SHA.
+
+```
+for i in {1..5}; do pytest -m hardware_free; done
+```
+
+Each iteration appends its own `results/history/*.json` and rebuilds the
+report, so `results/index.html` accumulates all 5 runs live. Open it
+afterward and check the Stability section for that SHA: any test with
+a red **FLAKY** badge passed on some of the 5 runs and failed on
+others — that's the signal to chase, not a single failing run in
+isolation. A steady 100% column with no flaky badges across all 5 is
+what "done" actually looks like for a test, per the 3-consecutive-runs
+rule above (5 is just extra margin).
+
+Never do this with `-m stateful` without the user explicitly asking —
+same rule as any other stateful run, and doubly so since this multiplies
+however many testbed activate/traffic cycles one run already costs.

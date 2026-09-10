@@ -1,0 +1,3 @@
+# Keeps this directory present in a fresh checkout. The .json files that
+# land alongside it are the real content and are committed normally —
+# see collect_run.py and the "Test results dashboard" section of README.

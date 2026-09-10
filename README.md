@@ -16,3 +16,15 @@ Playwright (Python) UI test suite for the Netropy Traffic Generator 4.0.
 - add --headed to watch
 
 See netropy-ui-test-plan.md for the full plan and CLAUDE.md for conventions.
+
+## Results dashboard
+Every `pytest` run updates `results/index.html` automatically — open it in
+a browser (no server needed) for pass/fail history, flaky-test tracking,
+and slowest tests. Rebuild by hand anytime with `make report`.
+
+Quick ways to open it:
+- Terminal: `open results/index.html`
+- Cursor/VS Code: Command Palette → "Simple Browser: Show" → paste the
+  URL from `results/report-url.txt` (kept up to date, one line, ready to
+  copy — not committed, it's a local convenience file, path is
+  machine-specific)

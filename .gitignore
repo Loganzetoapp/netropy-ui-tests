@@ -1,7 +1,15 @@
 .env
 .auth_state.json
 .auth_session_storage.json
-results/
+# Everything under results/ is ignored except results/history/ — those are
+# small per-run JSON summaries the dashboard is built from, and are meant
+# to be committed so the report has history across clones/CI. junit.xml,
+# screenshots, traces, and the soak/ dir stay ignored (raw, regenerable,
+# sometimes large). Must be results/* (not bare results/) — a bare
+# directory pattern stops git from descending into it at all, so the
+# negation below wouldn't be able to re-include anything inside.
+results/*
+!results/history/
 __pycache__/
 *.pyc
 .venv/

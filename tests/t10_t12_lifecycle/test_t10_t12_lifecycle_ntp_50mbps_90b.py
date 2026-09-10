@@ -1,50 +1,33 @@
-"""T10 — FAIL path: genuine overload (max rate, min frame size) should
-report FAIL.
+"""T10/T12 combined lifecycle test — NTP variant.
 
-Every other lifecycle test in this suite only proves the PASS path
-works. None of them verify the product correctly detects and reports a
-failure — a test suite that's never seen a real failure can't tell you
-the failure-detection logic actually works.
+Sibling of the UDP/TCP/ICMP lifecycle tests, using a protocol from the
+wizard's "Application" category instead of the generic IPv4 ones.
 
-Two earlier approaches were tried and ruled out (2026-08-27), both on
-the assumption that a routing/addressing misconfiguration between
-directly-cabled Port 3 and Port 4 would break delivery:
-  1. Wrong Destination IP on both ports — still PASSed at 0.000% loss,
-     1.673 Gbps Tx and Rx both.
-  2. Wrong Destination MAC on both ports (the actual field a receiving
-     NIC has to match) — still PASSed at 0.000% loss, 1.672 Gbps Tx and
-     Rx both.
-Both are real product-behavior findings, not test bugs: Rx counting
-between two directly-cabled ports on this box appears to not be gated
-by address-matching at all — it looks like whatever physically arrives
-on the wire gets counted, regardless of whether the frame's L2/L3
-addressing was "correct" for that receiver. Address-based
-misconfiguration doesn't produce a FAIL on this box/topology.
+Protocol research (via the live "✚ Add Stream" picker before writing this
+test — see project_bugs_found memory, 2026-09-10): NTP's picker entry
+reads "Time sync, UDP port 123", layer stack Ethernet → IPv4 → UDP →
+Payload, "Default ports: 123 → 123" (symmetric — real NTP clients and
+servers both use port 123), and creates exactly one stream ("ntp") per
+Add — same 1-stream-per-testbed shape as every other single-protocol
+lifecycle sibling.
 
-This version tries a different kind of break entirely: genuine
-overload. Both ports pushed to 10 Gbps (the max line rate the wizard
-allows) with 64-byte frames (minimum Ethernet frame size = maximum
-possible packets-per-second for a given bit rate) — the idea being that
-if the appliance's own hardware/CPU can't actually sustain max PPS in
-both directions at once, real frames get dropped for a real reason,
-independent of any address configuration. This is actual hardware
-stress, not a config trick, and unlike the address-based attempts it
-carries some real risk (accepted deliberately here) of provoking
-something like the Port 5-8 link-down issue seen elsewhere in this
-suite — if a port drops link during this test, stop and treat it as a
-hardware finding, don't retry blindly.
+Line rate/frame size are deliberately realistic for the protocol: real
+NTP traffic is tiny, infrequent sync packets (~48-90 bytes on the wire),
+not sustained bulk transfer — nowhere near this suite's multi-gigabit
+siblings — so this uses 50 Mbps (line-rate unit dropdown switched to
+Mbps, not a fractional Gbps value) and 90-byte frames (a real NTP packet
+plus Ethernet/IP/UDP headers, at the upper end of a typical NTP payload).
 
-Everything else (Port 3+4, UDP, correct source/destination IPs and
-MACs, correct subnet) matches the known-good sibling tests exactly, so
-line rate and frame size are the only two variables changed from a
-known-PASS config.
+Creates a Traffic Engine testbed on Port 3 + Port 4, configures a single
+NTP stream, activates it, waits for the run to finish on its own, and
+asserts the result is PASS — then cleans up (release ports, delete
+testbed).
 
-Stateful: generates real traffic on shared hardware, at the maximum
-rate/PPS this wizard allows.
+Stateful: generates real traffic on the box.
 
-Selector note: same caveats as the other lifecycle tests — several
-wizard controls have no accessible name/role/data-testid and fall back
-to CSS position (`.fc`, `.seg`, `nth-child`).
+Selector note: same caveats as every sibling — several wizard controls
+have no accessible name/role/data-testid and fall back to CSS position
+(`.fc`, `.seg`, `nth-child`).
 """
 import re
 
@@ -55,9 +38,14 @@ from conftest import assert_activatable_name
 
 # Testbed name must stay <= 15 chars: the backend can create and save a
 # longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
-TESTBED_NAME = "T10-FailPath"
+TESTBED_NAME = "T10-Life-NTP"
 assert_activatable_name(TESTBED_NAME)
 PORTS = ["Port 3", "Port 4"]
+# This app's own UI needs a short settling moment after several wizard
+# actions (toggles, selects) or the next locator's actionability wait can
+# time out — see feedback_codegen_replay_reliability memory. expect()
+# assertions are used for the actual correctness checks; this is purely a
+# settle buffer.
 BUFFER_MS = 400
 
 
@@ -72,7 +60,6 @@ def _testbed_tile(page: Page):
 def _delete_testbed_if_present(page: Page):
     tile = _testbed_tile(page)
     if tile.count() > 0:
-        # Icon order confirmed via screenshot: [0]=download [1]=duplicate [2]=delete
         tile.locator("button").nth(2).click()
         confirm = page.get_by_role("button", name="Delete", exact=True)
         if confirm.is_visible():
@@ -85,10 +72,6 @@ def _release_ports(page: Page):
     if dashboard_btn.is_visible():
         dashboard_btn.click()
         _buffer(page)
-        # A failure mid-wizard (before Apply/Save) leaves unsaved edits, so
-        # navigating away pops an "Unsaved changes" confirm modal (Discard
-        # / Save & close / Keep editing) that blocks the plain click above
-        # from actually landing on the dashboard.
         discard_btn = page.get_by_role("button", name="Discard", exact=True)
         if discard_btn.is_visible():
             discard_btn.click()
@@ -115,20 +98,7 @@ def clean_testbed(dashboard: Page):
 
 
 @pytest.mark.stateful
-@pytest.mark.xfail(
-    reason=(
-        "Confirmed 2026-08-27: this box/topology (Port 3+4, directly "
-        "cabled) doesn't produce a FAIL result via any of 3 tried "
-        "mechanisms — wrong dest IP, wrong dest MAC, and this test's own "
-        "max-rate/min-frame overload all still PASS at 0.000% loss. "
-        "Kept as documentation of that finding, not a blocking failure. "
-        "If the product/box changes such that this legitimately starts "
-        "reporting FAIL, this will XPASS (not an error, strict=False) — "
-        "worth noticing and updating this marker/reason at that point."
-    ),
-    strict=False,
-)
-def test_t10_fail_path_overload_max_rate_min_frame_reports_fail(dashboard: Page, clean_testbed):
+def test_t10_t12_lifecycle_ntp_50mbps_90b(dashboard: Page, clean_testbed):
     page = dashboard
 
     # --- Reserve Port 3 and Port 4 ---
@@ -149,8 +119,7 @@ def test_t10_fail_path_overload_max_rate_min_frame_reports_fail(dashboard: Page,
     page.get_by_role("button", name="Create draft").click()
     _buffer(page)
 
-    # --- Wizard step 1: Ports — enable Port 3 & Port 4, 10 Gbps (max) line rate ---
-    # Always scope Edit to the testbed by name, never by position.
+    # --- Wizard step 1: Ports — enable Port 3 & Port 4, 50 Mbps line rate ---
     _testbed_tile(page).get_by_role("button", name="Edit").click()
     _buffer(page)
     page.locator("tr:nth-child(3) > td > div > .toggle > .track").click()
@@ -158,69 +127,66 @@ def test_t10_fail_path_overload_max_rate_min_frame_reports_fail(dashboard: Page,
     page.locator("tr:nth-child(4) > td > div > .toggle > .track").click()
     _buffer(page)
     for port_label in PORTS:
-        # Anchor on the port label at the start of the row's accessible
-        # name rather than the old "{port} 10 Gbps ⚠ reserved by" literal
-        # — a "UNIT" column (value "Local") was added between the port
-        # name and the rate, breaking the contiguous substring match. A
-        # start-anchor also disambiguates from other ports' rows, which
-        # list this port as a Peer Port dropdown option elsewhere in
-        # their own row text.
-        rate_field = page.get_by_role(
-            "row", name=re.compile(rf"^{re.escape(port_label)}\b")
-        ).get_by_placeholder("line rate")
-        rate_field.fill("10")
+        row = page.get_by_role("row", name=re.compile(rf"^{re.escape(port_label)}\b"))
+        # Switch unit to Mbps before filling — 3rd <select> in the row
+        # (Direction, Peer port, Unit); pattern confirmed in
+        # test_t5_line_rate_unit_conversion.py. Real NTP traffic is nowhere
+        # near line-rate Gbps.
+        row.locator("select").nth(2).select_option(label="Mbps")
+        _buffer(page)
+        rate_field = row.get_by_placeholder("line rate")
+        rate_field.fill("50")
         _buffer(page)
     page.get_by_role(
         "row", name=re.compile(r"^Port 4\b")
     ).get_by_placeholder("line rate").press("Enter")
     _buffer(page)
 
-    # --- Wizard step 2: Network Configuration — kept correct on purpose ---
-    # Two prior versions of this test proved address misconfiguration
-    # (wrong Dest IP, then wrong Dest MAC) has zero effect on delivery
-    # here — so this version leaves everything address-related correct,
-    # letting the auto-fill/auto-link behavior do its normal thing, and
-    # relies purely on line rate + frame size (below) to create the
-    # actual overload.
+    # --- Wizard step 2: Network Configuration ---
     page.get_by_role("button", name="2 Network Configuration per-").click()
     _buffer(page)
     page.get_by_role("textbox", name="10.1.0.10").first.fill("10.0.8.1")
     _buffer(page)
-    page.locator(".seg").first.select_option("25")
+    page.locator(".seg").first.select_option("29")
     _buffer(page)
     page.get_by_role("textbox", name="10.1.0.10").nth(1).fill("10.0.8.2")
     _buffer(page)
     page.locator(
         "div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main "
         "> div > div:nth-child(2) > .ne-combo > select"
-    ).select_option("25")
+    ).select_option("29")
     _buffer(page)
     page.get_by_role("textbox", name="auto").nth(2).fill("10.0.8.1")
     _buffer(page)
     page.get_by_role("textbox", name="auto").first.fill("10.0.8.2")
     _buffer(page)
 
-    # --- Wizard step 3: Streams — UDP (default-highlighted), 64-byte (minimum) frames ---
-    # Minimum Ethernet frame size at maximum line rate maximizes
-    # packets-per-second — the actual overload variable.
+    # --- Wizard step 3: Streams — NTP, 90-byte frames ---
+    # NTP isn't the picker's default-highlighted protocol (UDP is), so it
+    # has to be selected explicitly, same as every non-UDP sibling.
     page.get_by_role("button", name="3 Streams traffic flows — at").click()
     _buffer(page)
     page.get_by_role("button", name="✚ Add Stream").click()
+    _buffer(page)
+    page.get_by_role("button", name="NTP", exact=True).click()
     _buffer(page)
     add_stream_btn = page.get_by_role("button", name="Add stream", exact=True)
     if add_stream_btn.is_visible():
         add_stream_btn.click()
         _buffer(page)
+
+    # NTP isn't its own layer either (same shape as DNS — see the DNS
+    # sibling's docstring/comment): the stream row's chips read UDP, not
+    # NTP, confirmed live.
     expect(page.get_by_role("button", name="UDP Edit UDP").first).to_be_visible()
     frame_size = page.locator("td:nth-child(5) > .fc").first
-    frame_size.fill("64")
+    frame_size.fill("90")
     _buffer(page)
     frame_size.press("Enter")
     _buffer(page)
 
-    # --- Wizard step 4: Traffic and Load Profile — fast ramp to sustained max rate ---
-    # 2/20/2 = 24s: reach full rate almost immediately and hold there,
-    # rather than spending most of the run gradually ramping up.
+    # --- Wizard step 4: Traffic and Load Profile ---
+    # 4/20/4 = 28s ramp — distinct from every other sibling's ramp.
     page.get_by_role("button", name="4 Traffic and Load Profile").click()
     _buffer(page)
     page.locator("div:nth-child(2) > div > .toggle > .track").click()
@@ -229,13 +195,13 @@ def test_t10_fail_path_overload_max_rate_min_frame_reports_fail(dashboard: Page,
     if ramp_input.count() == 0 or not ramp_input.is_visible():
         page.locator("div:nth-child(2) > div > .toggle > .track").click()
         _buffer(page)
-    page.locator(".fc > input").first.fill("2")
+    page.locator(".fc > input").first.fill("4")
     _buffer(page)
     page.locator("div:nth-child(2) > .fc > input").fill("20")
     _buffer(page)
     page.locator("div:nth-child(2) > .fc > input").press("Enter")
     _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").fill("2")
+    page.locator("div:nth-child(3) > .fc > input").fill("4")
     _buffer(page)
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
@@ -255,16 +221,11 @@ def test_t10_fail_path_overload_max_rate_min_frame_reports_fail(dashboard: Page,
     expect(tile.get_by_role("button", name="Stop")).to_be_visible(timeout=15000)
     expect(tile.get_by_role("button", name="Stop")).to_have_count(0, timeout=5 * 60 * 1000)
 
-    # --- Verify FAIL, not PASS ---
-    # Mirrors the PASS check in the other lifecycle tests: the badge
-    # displays uppercase via CSS but the underlying DOM text is
-    # lowercase, so match lowercase "fail" exactly. If this still shows
-    # "pass", that's another real product finding (the box genuinely
-    # sustains 10Gbps/64B without loss) — report it, don't force it.
+    # --- Verify PASS before touching Deactivate/Release ---
     # "Reports: N" only appears once the testbed is deactivated (see project
     # bugs memory, 2026-08-28) — at this point it's still active, so the
     # same run-history page is reached via "Stats" instead.
     tile.get_by_role("button", name="Stats").click()
-    expect(page.get_by_text("fail", exact=True)).to_be_visible(timeout=10000)
+    expect(page.get_by_text("pass", exact=True)).to_be_visible(timeout=10000)
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()

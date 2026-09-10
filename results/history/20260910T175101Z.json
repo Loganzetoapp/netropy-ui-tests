@@ -1,0 +1,52 @@
+{
+  "run_id": "20260910T175101Z",
+  "timestamp": "2026-09-10T17:51:01Z",
+  "git_sha": "49c2a88",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "duration": 17.1,
+  "tests": [
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 7.433,
+      "failure_message": null,
+      "screenshot": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_port_table_has_8_rows[chromium]",
+      "outcome": "pass",
+      "duration": 1.655,
+      "failure_message": null,
+      "screenshot": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_licenses_section_shows_gating[chromium]",
+      "outcome": "pass",
+      "duration": 1.836,
+      "failure_message": null,
+      "screenshot": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_loads.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 1.843,
+      "failure_message": null,
+      "screenshot": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_licenses_section_shows_gating.py::test_t2_licenses_section_shows_gating[chromium]",
+      "outcome": "pass",
+      "duration": 2.409,
+      "failure_message": null,
+      "screenshot": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_port_table_has_8_rows.py::test_t2_port_table_has_8_rows[chromium]",
+      "outcome": "pass",
+      "duration": 1.902,
+      "failure_message": null,
+      "screenshot": null
+    }
+  ]
+}
