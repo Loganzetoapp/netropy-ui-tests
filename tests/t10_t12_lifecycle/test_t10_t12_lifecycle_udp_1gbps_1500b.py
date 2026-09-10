@@ -17,10 +17,17 @@ delete with no aria-label/title), would benefit from data-testid
 attributes; noting here for the PR description rather than silently
 working around it.
 """
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
-TESTBED_NAME = "T10-T12-Lifecycle-UDP-1Gbps-1500B"
+from conftest import assert_activatable_name
+
+# Testbed name must stay <= 15 chars: the backend can create and save a
+# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
+TESTBED_NAME = "T10-Life-UDP"
+assert_activatable_name(TESTBED_NAME)
 PORTS = ["Port 3", "Port 4"]
 # This app's own UI needs a short settling moment after several wizard
 # actions (toggles, selects) or the next locator's actionability wait can
@@ -135,13 +142,20 @@ def test_t10_t12_lifecycle_udp_1gbps_1500b(dashboard: Page, clean_testbed):
     page.locator("tr:nth-child(4) > td > div > .toggle > .track").click()
     _buffer(page)
     for port_label in PORTS:
+        # Anchor on the port label at the start of the row's accessible
+        # name rather than the old "{port} 10 Gbps ⚠ reserved by" literal
+        # — a "UNIT" column (value "Local") was added between the port
+        # name and the rate, breaking the contiguous substring match. A
+        # start-anchor also disambiguates from other ports' rows, which
+        # list this port as a Peer Port dropdown option elsewhere in
+        # their own row text.
         rate_field = page.get_by_role(
-            "row", name=f"{port_label} 10 Gbps ⚠ reserved by"
+            "row", name=re.compile(rf"^{re.escape(port_label)}\b")
         ).get_by_placeholder("line rate")
         rate_field.fill("1")
         _buffer(page)
     page.get_by_role(
-        "row", name="Port 4 10 Gbps ⚠ reserved by"
+        "row", name=re.compile(r"^Port 4\b")
     ).get_by_placeholder("line rate").press("Enter")
     _buffer(page)
 
@@ -257,7 +271,10 @@ def test_t10_t12_lifecycle_udp_1gbps_1500b(dashboard: Page, clean_testbed):
     # but the underlying DOM text is lowercase "pass" — exact match on the
     # visually-uppercase string never matches. Confirmed via a11y dump:
     # row "#1latest ... 0.000 % pass ...".
-    tile.get_by_role("button", name="Reports:").click()
+    # "Reports: N" only appears once the testbed is deactivated (see project
+    # bugs memory, 2026-08-28) — at this point it's still active, so the
+    # same run-history page is reached via "Stats" instead.
+    tile.get_by_role("button", name="Stats").click()
     expect(page.get_by_text("pass", exact=True)).to_be_visible(timeout=10000)
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()

@@ -44,11 +44,19 @@ for the full rationale; not repeated here.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import Page, expect
 
-TESTBED_A_NAME = "T10-Concurrent-A-UDP-1Gbps"
-TESTBED_B_NAME = "T10-Concurrent-B-TCP-1Gbps"
+from conftest import assert_activatable_name
+
+# Testbed name must stay <= 15 chars: the backend can create and save a
+# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
+TESTBED_A_NAME = "T10-Concur-A"
+TESTBED_B_NAME = "T10-Concur-B"
+assert_activatable_name(TESTBED_A_NAME)
+assert_activatable_name(TESTBED_B_NAME)
 PORTS_A = ["Port 1", "Port 2"]
 PORTS_B = ["Port 3", "Port 4"]
 ALL_PORTS = PORTS_A + PORTS_B
@@ -161,13 +169,20 @@ def _build_and_apply_testbed(
         page.locator(f"tr:nth-child({n}) > td > div > .toggle > .track").click()
         _buffer(page)
     for port_label in ports:
+        # Anchor on the port label at the start of the row's accessible
+        # name rather than the old "{port} 10 Gbps ⚠ reserved by" literal
+        # — a "UNIT" column (value "Local") was added between the port
+        # name and the rate, breaking the contiguous substring match. A
+        # start-anchor also disambiguates from other ports' rows, which
+        # list this port as a Peer Port dropdown option elsewhere in
+        # their own row text.
         rate_field = page.get_by_role(
-            "row", name=f"{port_label} 10 Gbps ⚠ reserved by"
+            "row", name=re.compile(rf"^{re.escape(port_label)}\b")
         ).get_by_placeholder("line rate")
         rate_field.fill(str(rate_gbps))
         _buffer(page)
     page.get_by_role(
-        "row", name=f"{ports[-1]} 10 Gbps ⚠ reserved by"
+        "row", name=re.compile(rf"^{re.escape(ports[-1])}\b")
     ).get_by_placeholder("line rate").press("Enter")
     _buffer(page)
 
@@ -321,12 +336,15 @@ def test_t10_two_testbeds_run_simultaneously(dashboard: Page, clean_testbeds):
     # --- Verify both PASS independently, before touching Deactivate/Release ---
     # The result badge displays as "PASS" (CSS text-transform: uppercase)
     # but the underlying DOM text is lowercase "pass".
-    tile_a.get_by_role("button", name="Reports:").click()
+    # "Reports: N" only appears once the testbed is deactivated (see project
+    # bugs memory, 2026-08-28) — both are still active here, so the same
+    # run-history page is reached via "Stats" instead.
+    tile_a.get_by_role("button", name="Stats").click()
     expect(page.get_by_text("pass", exact=True)).to_be_visible(timeout=10000)
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()
 
-    tile_b.get_by_role("button", name="Reports:").click()
+    tile_b.get_by_role("button", name="Stats").click()
     expect(page.get_by_text("pass", exact=True)).to_be_visible(timeout=10000)
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()

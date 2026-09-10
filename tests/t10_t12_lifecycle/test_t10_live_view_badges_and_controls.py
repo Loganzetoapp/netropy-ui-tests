@@ -21,7 +21,12 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
-NAME = "T10-LiveView-DeleteMe"
+from conftest import assert_activatable_name
+
+# Testbed name must stay <= 15 chars: the backend can create and save a
+# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
+NAME = "T10-LiveView"
+assert_activatable_name(NAME)
 PORTS = ["Port 1", "Port 2"]
 
 
@@ -135,7 +140,7 @@ def test_t10_live_badges_and_t11_stats_controls(dashboard: Page, clean_testbed):
     # --- Live: badges + dashboard active counter + non-zero per-port table ---
     expect(page.locator(".pill", has_text="active")).to_be_visible(timeout=15000)
     # "LIVE" alone (fuzzy/case-insensitive) also matches the testbed's own
-    # name "T10-LiveView-DeleteMe" — match the badge's distinctive "LIVE ·"
+    # name "T10-LiveView" — match the badge's distinctive "LIVE ·"
     # separator instead.
     expect(page.get_by_text("LIVE ·", exact=False)).to_be_visible(timeout=15000)
 
