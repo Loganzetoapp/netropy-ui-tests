@@ -42,7 +42,81 @@ function selectModule(module, btn) {
 
 async function renderTrafficGenerator(panel) {
   panel.innerHTML = "<p>Loading tests…</p>";
-  // Task 10 fills this in.
+  const { groups } = await fetchJSON("/api/catalog");
+  state.catalog = groups;
+  panel.innerHTML = groups.map(renderGroup).join("");
+  attachTestRowHandlers();
+}
+
+function renderGroup(group) {
+  const rows = group.files
+    .flatMap((f) => f.tests.map((t) => renderTestRow(t, f)))
+    .join("");
+  return `
+    <section class="group" data-group-id="${group.id}">
+      <div class="group-header">
+        <h2>${group.label}</h2>
+        <button type="button" class="btn-outline run-all-btn" data-nodeids='${JSON.stringify(group.run_all_nodeids)}'>
+          Run all in ${group.label.split(" — ")[0]}
+        </button>
+      </div>
+      ${rows}
+    </section>`;
+}
+
+function safetyPill(marker) {
+  if (marker === "stateful") return `<span class="pill pill-warn">Generates traffic</span>`;
+  return `<span class="pill pill-ok">Safe</span>`;
+}
+
+function renderTestRow(test, file) {
+  return `
+    <div class="test-row" data-nodeid="${test.nodeid}" data-full-description="${escapeAttr(file.full_description)}">
+      <div>
+        <div class="test-name">${test.name}</div>
+        <div class="test-desc">${file.short_description}</div>
+      </div>
+      <div class="test-row-actions">
+        <span class="pill" data-status-for="${test.nodeid}"></span>
+        ${safetyPill(test.safety_marker)}
+        <button type="button" class="btn-primary run-btn" data-nodeid="${test.nodeid}" data-marker="${test.safety_marker}">Run</button>
+      </div>
+    </div>`;
+}
+
+function escapeAttr(s) {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+}
+
+function attachTestRowHandlers() {
+  document.querySelectorAll(".test-row").forEach((row) => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".run-btn")) return;
+      toggleDetail(row);
+    });
+  });
+  document.querySelectorAll(".run-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openRunModal(btn.dataset.nodeid, btn.dataset.marker);
+    });
+  });
+  document.querySelectorAll(".run-all-btn").forEach((btn) => {
+    btn.addEventListener("click", () => runAllInGroup(JSON.parse(btn.dataset.nodeids)));
+  });
+}
+
+function toggleDetail(row) {
+  const existing = row.nextElementSibling;
+  if (existing && existing.classList.contains("detail-panel")) {
+    existing.remove();
+    return;
+  }
+  document.querySelectorAll(".detail-panel").forEach((p) => p.remove());
+  const panel = document.createElement("div");
+  panel.className = "detail-panel";
+  panel.textContent = row.dataset.fullDescription;
+  row.after(panel);
 }
 
 document.getElementById("nav-tests").addEventListener("click", () => showPage("tests"));
