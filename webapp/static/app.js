@@ -272,13 +272,54 @@ function showPage(page) {
   document.getElementById("nav-tests").classList.toggle("active", page === "tests");
   document.getElementById("nav-results").classList.toggle("active", page === "results");
   const tabs = document.getElementById("module-tabs");
+  const panel = document.getElementById("module-panel");
   if (page === "results") {
     tabs.hidden = true;
-    document.getElementById("module-panel").innerHTML = "<p>Results page — Task 12.</p>";
+    renderResults(panel);
   } else {
     tabs.hidden = false;
     loadModules();
   }
+}
+
+async function renderResults(panel) {
+  panel.innerHTML = "<p>Loading results…</p>";
+  const { batches } = await fetchJSON("/api/results");
+  if (batches.length === 0) {
+    panel.innerHTML = `<p class="test-desc">No runs yet — go run a test from the Tests page.</p>`;
+    return;
+  }
+  panel.innerHTML = `
+    <table class="results-table">
+      <thead><tr><th>Test</th><th>Runs</th><th>Pass rate</th><th>Duration</th><th>Started</th><th>Artifacts</th></tr></thead>
+      <tbody>${batches.map(renderResultRow).join("")}</tbody>
+    </table>`;
+}
+
+function renderResultRow(batch) {
+  const dots = batch.iterations
+    .map(
+      (i) =>
+        `<span class="iteration-dot ${i.outcome === "pass" ? "pass" : i.outcome === "error" ? "error" : "fail"}"></span>`
+    )
+    .join("");
+  const links =
+    batch.iterations
+      .flatMap((i) => [
+        i.screenshot ? `<a href="/results/${i.screenshot}" target="_blank">screenshot</a>` : null,
+        i.trace ? `<a href="/results/${i.trace}" target="_blank">trace</a>` : null,
+      ])
+      .filter(Boolean)
+      .join(" · ") || "—";
+  return `
+    <tr>
+      <td>${batch.nodeid.split("::").pop()}</td>
+      <td><span class="iteration-dots">${dots}</span></td>
+      <td>${batch.pass_count}/${batch.total}</td>
+      <td>${batch.total_duration.toFixed(1)}s</td>
+      <td>${batch.started_at.replace("T", " ").replace("Z", " UTC")}</td>
+      <td>${links}</td>
+    </tr>`;
 }
 
 loadModules();
