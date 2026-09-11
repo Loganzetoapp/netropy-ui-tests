@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -81,6 +82,25 @@ def _screenshot_for(nodeid: str, artifacts_dir: Path) -> Optional[str]:
     return None
 
 
+def _trace_for(nodeid: str, artifacts_dir: Path) -> Optional[str]:
+    """Same convention as _screenshot_for, but for the trace.zip a
+    webapp-triggered run's page fixture saves on failure (see
+    conftest.py). Always safe to call for every run — returns None when
+    no trace exists, which is the normal case for plain CLI-triggered
+    runs (tracing is gated off for those)."""
+    try:
+        from scripts.artifact_paths import slugify
+    except Exception:
+        return None
+    trace_path = artifacts_dir / slugify(nodeid) / "trace.zip"
+    if trace_path.exists():
+        try:
+            return str(trace_path.relative_to(artifacts_dir.parent))
+        except ValueError:
+            return str(trace_path)
+    return None
+
+
 def _parse_testcase(tc: ET.Element, artifacts_dir: Path) -> dict:
     nodeid_file = tc.get("classname", "").replace(".", "/")
     # classname is dotted-module form (tests.t10_x.test_y); junit's own
@@ -120,6 +140,7 @@ def _parse_testcase(tc: ET.Element, artifacts_dir: Path) -> dict:
         "duration": duration,
         "failure_message": failure_message,
         "screenshot": _screenshot_for(nodeid, artifacts_dir),
+        "trace": _trace_for(nodeid, artifacts_dir),
     }
 
 
@@ -128,6 +149,7 @@ def build_summary(
     markers: str = "",
     artifacts_dir: Path = DEFAULT_ARTIFACTS_DIR,
     run_time: Optional[datetime] = None,
+    batch_id: Optional[str] = None,
 ) -> Optional[dict]:
     """Parse junit_path into a history summary dict, or None if it can't be
     read/parsed (missing file, no tests ran, malformed XML)."""
@@ -158,7 +180,7 @@ def build_summary(
     now = run_time or datetime.now(timezone.utc)
     run_id = now.strftime("%Y%m%dT%H%M%SZ")
 
-    return {
+    summary = {
         "run_id": run_id,
         "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "git_sha": _git("rev-parse", "--short", "HEAD") or "unknown",
@@ -167,6 +189,9 @@ def build_summary(
         "duration": round(total_duration, 3),
         "tests": tests,
     }
+    if batch_id:
+        summary["batch_id"] = batch_id
+    return summary
 
 
 def write_summary(summary: dict, history_dir: Path = DEFAULT_HISTORY_DIR) -> Path:
@@ -188,10 +213,15 @@ def collect(
     history_dir: Path = DEFAULT_HISTORY_DIR,
     artifacts_dir: Path = DEFAULT_ARTIFACTS_DIR,
     markers: str = "",
+    batch_id: Optional[str] = None,
 ) -> Optional[Path]:
     """High-level entry point: parse + write. Returns the written path, or
     None if there was nothing collectible (never raises)."""
-    summary = build_summary(junit_path, markers=markers, artifacts_dir=artifacts_dir)
+    if batch_id is None:
+        batch_id = os.environ.get("NETROPY_WEBAPP_BATCH_ID")
+    summary = build_summary(
+        junit_path, markers=markers, artifacts_dir=artifacts_dir, batch_id=batch_id
+    )
     if summary is None:
         return None
     return write_summary(summary, history_dir)
