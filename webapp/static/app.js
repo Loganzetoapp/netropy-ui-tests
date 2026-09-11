@@ -1,4 +1,4 @@
-const state = { catalog: null, liveStatus: {} };
+const state = { catalog: null, liveStatus: {}, batchRunning: false };
 
 async function fetchJSON(url, opts) {
   const res = await fetch(url, opts);
@@ -98,12 +98,15 @@ function attachTestRowHandlers() {
   document.querySelectorAll(".run-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
-      openRunModal(btn.dataset.nodeid, btn.dataset.marker);
+      openRunModal(btn.dataset.nodeid, btn.dataset.marker, btn);
     });
   });
   document.querySelectorAll(".run-all-btn").forEach((btn) => {
     btn.addEventListener("click", () => runAllInGroup(JSON.parse(btn.dataset.nodeids)));
   });
+  // A batch may already be running (e.g. the user switched tabs and back
+  // mid-run) — newly attached buttons need to reflect that immediately.
+  setRunControlsEnabled(!state.batchRunning);
 }
 
 function toggleDetail(row) {
@@ -117,6 +120,133 @@ function toggleDetail(row) {
   panel.className = "detail-panel";
   panel.textContent = row.dataset.fullDescription;
   row.after(panel);
+}
+
+let modalNodeid = null;
+let modalTriggerEl = null;
+
+function openRunModal(nodeid, marker, triggerEl) {
+  modalNodeid = nodeid;
+  modalTriggerEl = triggerEl || document.activeElement;
+  document.getElementById("run-modal-warning").hidden = marker !== "stateful";
+  const countInput = document.getElementById("run-modal-count");
+  countInput.value = 1;
+  document.getElementById("run-modal").hidden = false;
+  // Land keyboard focus in the field people are most likely to change,
+  // with its default value pre-selected so typing overwrites it.
+  countInput.focus();
+  countInput.select();
+}
+
+function closeRunModal() {
+  document.getElementById("run-modal").hidden = true;
+  if (modalTriggerEl) modalTriggerEl.focus();
+}
+
+document.getElementById("run-modal-close").addEventListener("click", closeRunModal);
+
+// Clicking the dimmed backdrop (not the modal card itself) closes it, and
+// so does Escape — standard modal conventions the brief's markup already
+// supports but didn't wire up.
+document.getElementById("run-modal").addEventListener("click", (e) => {
+  if (e.target.id === "run-modal") closeRunModal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !document.getElementById("run-modal").hidden) closeRunModal();
+});
+document.getElementById("run-modal-count").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById("run-modal-confirm").click();
+  }
+});
+
+document.getElementById("run-modal-confirm").addEventListener("click", async () => {
+  const raw = parseInt(document.getElementById("run-modal-count").value, 10);
+  const count = Number.isFinite(raw) && raw > 0 ? raw : 1;
+  const nodeid = modalNodeid;
+  closeRunModal();
+  await startRun(nodeid, count);
+});
+
+async function startRun(nodeid, repeatCount) {
+  try {
+    const { batch_id } = await fetchJSON("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nodeid, repeat_count: repeatCount }),
+    });
+    streamRun(batch_id, nodeid);
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+function statusPillClass(status) {
+  if (status === "passed") return "pill-ok";
+  if (status === "failed" || status === "error") return "pill-bad";
+  return "pill-warn";
+}
+
+// The backend allows exactly one batch to run at a time, globally
+// (webapp/runner.py) — mirroring that here means a queued-up second
+// click never has to round-trip to a 409 just to find out it can't run.
+function setRunControlsEnabled(enabled) {
+  document.querySelectorAll(".run-btn, .run-all-btn").forEach((btn) => {
+    btn.disabled = !enabled;
+  });
+}
+
+function streamRun(batchId, nodeid) {
+  const el = document.querySelector(`[data-status-for="${nodeid}"]`);
+  state.liveStatus[nodeid] = "running";
+  state.batchRunning = true;
+  setRunControlsEnabled(false);
+  // Reflect "running" the instant the batch is confirmed started, rather
+  // than waiting on the first SSE round-trip (pytest collection can take
+  // a beat before the first iteration event arrives).
+  if (el) {
+    el.textContent = "running";
+    el.className = "pill pill-warn";
+  }
+  const source = new EventSource(`/api/runs/${batchId}/stream`);
+  const finish = () => {
+    state.batchRunning = false;
+    setRunControlsEnabled(true);
+  };
+  source.onmessage = (e) => {
+    const payload = JSON.parse(e.data);
+    if (payload.type === "iteration") {
+      if (el) {
+        el.textContent = `${payload.status} (${payload.iteration}/${payload.total})`;
+        el.className = "pill " + statusPillClass(payload.status);
+      }
+    } else if (payload.type === "batch_complete") {
+      state.liveStatus[nodeid] = "done";
+      if (el) el.textContent = `${payload.passed}/${payload.total} passed`;
+      source.close();
+      finish();
+    }
+  };
+  source.onerror = () => {
+    source.close();
+    state.liveStatus[nodeid] = "done";
+    finish();
+  };
+}
+
+async function runAllInGroup(nodeids) {
+  for (const nodeid of nodeids) {
+    await startRun(nodeid, 1);
+    await new Promise((resolve) => {
+      const check = setInterval(() => {
+        if (state.liveStatus[nodeid] === "done") {
+          clearInterval(check);
+          resolve();
+        }
+      }, 300);
+    });
+  }
 }
 
 document.getElementById("nav-tests").addEventListener("click", () => showPage("tests"));
