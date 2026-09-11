@@ -169,6 +169,11 @@ document.getElementById("run-modal-confirm").addEventListener("click", async () 
   await startRun(nodeid, count);
 });
 
+// Returns true once the batch is confirmed started (streamRun has taken
+// over), false if the request was rejected (e.g. a 409 from another
+// batch already running) — callers that chain multiple runs (see
+// runAllInGroup) need this to know not to wait on a run that never
+// started.
 async function startRun(nodeid, repeatCount) {
   try {
     const { batch_id } = await fetchJSON("/api/runs", {
@@ -177,8 +182,10 @@ async function startRun(nodeid, repeatCount) {
       body: JSON.stringify({ nodeid, repeat_count: repeatCount }),
     });
     streamRun(batch_id, nodeid);
+    return true;
   } catch (err) {
     alert(err.message);
+    return false;
   }
 }
 
@@ -237,7 +244,16 @@ function streamRun(batchId, nodeid) {
 
 async function runAllInGroup(nodeids) {
   for (const nodeid of nodeids) {
-    await startRun(nodeid, 1);
+    const started = await startRun(nodeid, 1);
+    if (!started) {
+      // startRun already alerted with the specific reason (e.g. a 409
+      // from another batch running). Without this, the loop would go on
+      // to await a state.liveStatus[nodeid] === "done" that streamRun
+      // never got the chance to set, polling forever on a leaked
+      // interval. Stop the sequence here instead of hanging silently.
+      alert(`Run all stopped before finishing — "${nodeid}" could not be started.`);
+      return;
+    }
     await new Promise((resolve) => {
       const check = setInterval(() => {
         if (state.liveStatus[nodeid] === "done") {
