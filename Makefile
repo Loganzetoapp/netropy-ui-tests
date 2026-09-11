@@ -1,4 +1,9 @@
-.PHONY: report run-dashboard
+.PHONY: setup report run-dashboard
+
+# One-time setup on a new machine: venv, Python deps, the Chromium browser
+# Playwright drives, and a starter .env. Safe to re-run.
+setup:
+	bash scripts/setup.sh
 
 # Rebuild results/index.html from whatever's already in results/history/,
 # without running any tests. Normal test runs rebuild it automatically

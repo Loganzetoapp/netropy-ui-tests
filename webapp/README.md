@@ -5,6 +5,12 @@ Playwright tests — no terminal, no pytest/Playwright knowledge needed.
 
 ## Run it
 
+First time on this machine? `make setup` (see the root `README.md`) —
+creates a `.venv`, installs dependencies, downloads the Chromium browser,
+and creates `.env` for you to fill in with real lab-box credentials.
+
+Then:
+
     make run-dashboard
 
 (or `python -m webapp.app` from the repo root — not `python webapp/app.py`
