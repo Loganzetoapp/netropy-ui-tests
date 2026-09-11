@@ -63,9 +63,16 @@ def _latest_history_file(history_dir: Path) -> Optional[Path]:
 
 
 def _find_test_result(history_file: Path, nodeid: str) -> Optional[dict]:
+    """Match a triggering nodeid (constructed without a browser-parametrize
+    suffix, see catalog.py) against the nodeid actually recorded by
+    pytest-playwright, which always carries a `[chromium]`-style suffix.
+    Falls back to an exact match in case a nodeid is ever recorded without
+    a suffix (e.g. a different browser engine config, or a future
+    non-parametrized test)."""
     data = json.loads(history_file.read_text())
     for test in data.get("tests", []):
-        if test["nodeid"] == nodeid:
+        stored = test["nodeid"]
+        if stored == nodeid or stored.startswith(nodeid + "["):
             return test
     return None
 
