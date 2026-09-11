@@ -42,13 +42,23 @@ function selectModule(module, btn) {
 
 async function renderTrafficGenerator(panel) {
   panel.innerHTML = "<p>Loading tests…</p>";
-  const { groups } = await fetchJSON("/api/catalog");
-  state.catalog = groups;
-  panel.innerHTML = groups.map(renderGroup).join("");
-  attachTestRowHandlers();
+  try {
+    const { groups } = await fetchJSON("/api/catalog");
+    state.catalog = groups;
+    panel.innerHTML = groups.map(renderGroup).join("");
+    attachTestRowHandlers();
+  } catch (err) {
+    panel.innerHTML = `<p class="test-desc">Couldn't load tests: ${escapeHtml(err.message)}</p>`;
+  }
 }
 
 function renderGroup(group) {
+  // Same source of truth safetyPill/renderTestRow use for each row's
+  // "Generates traffic" pill — reused here so "Run all" and the
+  // per-test pills can never disagree about which tests are stateful.
+  const allTests = group.files.flatMap((f) => f.tests);
+  const statefulCount = allTests.filter((t) => t.safety_marker === "stateful").length;
+  const groupName = group.label.split(" — ")[0];
   const rows = group.files
     .flatMap((f) => f.tests.map((t) => renderTestRow(t, f)))
     .join("");
@@ -56,8 +66,11 @@ function renderGroup(group) {
     <section class="group" data-group-id="${group.id}">
       <div class="group-header">
         <h2>${group.label}</h2>
-        <button type="button" class="btn-outline run-all-btn" data-nodeids='${JSON.stringify(group.run_all_nodeids)}'>
-          Run all in ${group.label.split(" — ")[0]}
+        <button type="button" class="btn-outline run-all-btn"
+          data-nodeids='${JSON.stringify(group.run_all_nodeids)}'
+          data-stateful-count="${statefulCount}"
+          data-group-name="${escapeAttr(groupName)}">
+          Run all in ${groupName}
         </button>
       </div>
       ${rows}
@@ -88,6 +101,13 @@ function escapeAttr(s) {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 function attachTestRowHandlers() {
   document.querySelectorAll(".test-row").forEach((row) => {
     row.addEventListener("click", (e) => {
@@ -102,7 +122,19 @@ function attachTestRowHandlers() {
     });
   });
   document.querySelectorAll(".run-all-btn").forEach((btn) => {
-    btn.addEventListener("click", () => runAllInGroup(JSON.parse(btn.dataset.nodeids)));
+    btn.addEventListener("click", () => {
+      const nodeids = JSON.parse(btn.dataset.nodeids);
+      const statefulCount = parseInt(btn.dataset.statefulCount, 10) || 0;
+      if (statefulCount > 0) {
+        // At least one stateful test in this group — same hazard as the
+        // single-test Run modal's warning, just naming the group instead
+        // of one nodeid. Block on confirmation before anything runs.
+        openRunAllModal(nodeids, btn.dataset.groupName, statefulCount, btn);
+      } else {
+        // All hardware_free — no traffic risk, no added friction.
+        runAllInGroup(nodeids);
+      }
+    });
   });
   // A batch may already be running (e.g. the user switched tabs and back
   // mid-run) — newly attached buttons need to reflect that immediately.
@@ -122,13 +154,24 @@ function toggleDetail(row) {
   row.after(panel);
 }
 
+// modalMode distinguishes the two things this one modal now confirms:
+// "single" (openRunModal — repeat-count field, calls startRun) and
+// "group" (openRunAllModal — no repeat count, calls runAllInGroup).
+let modalMode = null;
 let modalNodeid = null;
+let modalGroupNodeids = null;
 let modalTriggerEl = null;
 
 function openRunModal(nodeid, marker, triggerEl) {
+  modalMode = "single";
   modalNodeid = nodeid;
   modalTriggerEl = triggerEl || document.activeElement;
-  document.getElementById("run-modal-warning").hidden = marker !== "stateful";
+  document.getElementById("run-modal-title").textContent = "Run test";
+  const warning = document.getElementById("run-modal-warning");
+  warning.textContent = "⚠ This generates real network traffic on the lab hardware.";
+  warning.hidden = marker !== "stateful";
+  document.getElementById("run-modal-count-field").hidden = false;
+  document.getElementById("run-modal-confirm").textContent = "Run";
   const countInput = document.getElementById("run-modal-count");
   countInput.value = 1;
   document.getElementById("run-modal").hidden = false;
@@ -136,6 +179,26 @@ function openRunModal(nodeid, marker, triggerEl) {
   // with its default value pre-selected so typing overwrites it.
   countInput.focus();
   countInput.select();
+}
+
+// Confirmation gate for "Run all in T<N>" when the group contains any
+// stateful test — the group-level equivalent of openRunModal's warning.
+// Per the plan, run-all never prompts for a repeat count (that's a
+// single-test-only concept), so the count field stays hidden here.
+function openRunAllModal(nodeids, groupName, statefulCount, triggerEl) {
+  modalMode = "group";
+  modalGroupNodeids = nodeids;
+  modalTriggerEl = triggerEl || document.activeElement;
+  document.getElementById("run-modal-title").textContent = `Run all in ${groupName}`;
+  const warning = document.getElementById("run-modal-warning");
+  warning.textContent =
+    `⚠ Run all ${nodeids.length} tests in ${groupName}? ${statefulCount} of these generate ` +
+    `real network traffic on the lab hardware.`;
+  warning.hidden = false;
+  document.getElementById("run-modal-count-field").hidden = true;
+  document.getElementById("run-modal-confirm").textContent = "Run all";
+  document.getElementById("run-modal").hidden = false;
+  document.getElementById("run-modal-confirm").focus();
 }
 
 function closeRunModal() {
@@ -162,6 +225,12 @@ document.getElementById("run-modal-count").addEventListener("keydown", (e) => {
 });
 
 document.getElementById("run-modal-confirm").addEventListener("click", async () => {
+  if (modalMode === "group") {
+    const nodeids = modalGroupNodeids;
+    closeRunModal();
+    await runAllInGroup(nodeids);
+    return;
+  }
   const raw = parseInt(document.getElementById("run-modal-count").value, 10);
   const count = Number.isFinite(raw) && raw > 0 ? raw : 1;
   const nodeid = modalNodeid;
@@ -284,16 +353,20 @@ function showPage(page) {
 
 async function renderResults(panel) {
   panel.innerHTML = "<p>Loading results…</p>";
-  const { batches } = await fetchJSON("/api/results");
-  if (batches.length === 0) {
-    panel.innerHTML = `<p class="test-desc">No runs yet — go run a test from the Tests page.</p>`;
-    return;
+  try {
+    const { batches } = await fetchJSON("/api/results");
+    if (batches.length === 0) {
+      panel.innerHTML = `<p class="test-desc">No runs yet — go run a test from the Tests page.</p>`;
+      return;
+    }
+    panel.innerHTML = `
+      <table class="results-table">
+        <thead><tr><th>Test</th><th>Runs</th><th>Pass rate</th><th>Duration</th><th>Started</th><th>Artifacts</th></tr></thead>
+        <tbody>${batches.map(renderResultRow).join("")}</tbody>
+      </table>`;
+  } catch (err) {
+    panel.innerHTML = `<p class="test-desc">Couldn't load results: ${escapeHtml(err.message)}</p>`;
   }
-  panel.innerHTML = `
-    <table class="results-table">
-      <thead><tr><th>Test</th><th>Runs</th><th>Pass rate</th><th>Duration</th><th>Started</th><th>Artifacts</th></tr></thead>
-      <tbody>${batches.map(renderResultRow).join("")}</tbody>
-    </table>`;
 }
 
 function renderResultRow(batch) {

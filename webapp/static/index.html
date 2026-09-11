@@ -25,11 +25,9 @@
   <div id="run-modal" class="modal-overlay" hidden>
     <div class="modal">
       <button type="button" class="modal-close" id="run-modal-close">&times;</button>
-      <h2>Run test</h2>
-      <p id="run-modal-warning" class="stateful-warning" hidden>
-        ⚠ This generates real network traffic on the lab hardware.
-      </p>
-      <label class="field">
+      <h2 id="run-modal-title">Run test</h2>
+      <p id="run-modal-warning" class="stateful-warning" hidden></p>
+      <label class="field" id="run-modal-count-field">
         How many times?
         <input type="number" id="run-modal-count" min="1" value="1">
       </label>
