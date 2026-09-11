@@ -89,6 +89,14 @@ def page(browser, auth_state, request, pytestconfig) -> Page:
         for key, value in session_storage.items()
     )
     context.add_init_script(init_script)
+
+    # Tracing is only captured for runs the web dashboard triggers (see
+    # webapp/runner.py, which sets NETROPY_WEBAPP_BATCH_ID) — the existing
+    # CLI-driven suite's disk usage and behavior stay exactly as they are.
+    capture_trace = bool(os.environ.get("NETROPY_WEBAPP_BATCH_ID"))
+    if capture_trace:
+        context.tracing.start(screenshots=True, snapshots=True, sources=True)
+
     pg = context.new_page()
     yield pg
 
@@ -121,6 +129,22 @@ def page(browser, auth_state, request, pytestconfig) -> Page:
             )
         except Exception:
             pass  # a screenshot is a nice-to-have — never fail teardown over one
+
+    # retain-on-failure: only keep the trace file for a failed run; still
+    # call stop() either way to end the tracing session cleanly.
+    if capture_trace:
+        try:
+            from scripts.artifact_paths import slugify
+
+            output_dir = pathlib.Path(pytestconfig.getoption("--output"))
+            test_dir = output_dir / slugify(request.node.nodeid)
+            if failed:
+                test_dir.mkdir(parents=True, exist_ok=True)
+                context.tracing.stop(path=str(test_dir / "trace.zip"))
+            else:
+                context.tracing.stop()
+        except Exception:
+            pass
 
     context.close()
 
