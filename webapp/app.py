@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -176,9 +176,17 @@ def get_results():
     }
 
 
-# Order matters: specific mounts before the catch-all "/" static mount.
+# The frontend (index.html, styles.css, app.js, icons, logo) is served
+# under /static — matching the paths /api/modules returns and the ones
+# index.html itself uses. "/" serves index.html directly so the app
+# still opens at the root URL.
 app.mount("/results", StaticFiles(directory=str(REPO_ROOT / "results")), name="results")
-app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+def index():
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 if __name__ == "__main__":

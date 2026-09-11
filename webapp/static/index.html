@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Netropy Test Dashboard</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <img src="/static/apposite-logo.png" alt="Apposite Technologies" class="logo">
+    <h1>Netropy Test Dashboard</h1>
+  </header>
+
+  <nav class="tabs" id="module-tabs"></nav>
+
+  <div class="page-nav">
+    <button type="button" id="nav-tests" class="page-nav-btn active">Tests</button>
+    <button type="button" id="nav-results" class="page-nav-btn">Results</button>
+  </div>
+
+  <main id="module-panel"></main>
+
+  <div id="run-modal" class="modal-overlay" hidden>
+    <div class="modal">
+      <button type="button" class="modal-close" id="run-modal-close">&times;</button>
+      <h2>Run test</h2>
+      <p id="run-modal-warning" class="stateful-warning" hidden>
+        ⚠ This generates real network traffic on the lab hardware.
+      </p>
+      <label class="field">
+        How many times?
+        <input type="number" id="run-modal-count" min="1" value="1">
+      </label>
+      <button type="button" id="run-modal-confirm" class="btn-primary">Run</button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
