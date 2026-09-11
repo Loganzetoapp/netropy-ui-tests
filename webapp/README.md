@@ -22,6 +22,29 @@ directly, see the comment in `app.py`.) Then open the URL it prints
   already use) — survives restarts.
 - Exactly one test runs at a time, globally, enforced server-side.
 
+## Sharing the dashboard
+
+By default this only listens on your own machine (`127.0.0.1`) with no
+login — nothing to configure, same as always.
+
+To let other people on the network use it too (one person runs it, everyone
+else opens it in their browser), set in `.env`:
+
+    WEBAPP_HOST=0.0.0.0
+    WEBAPP_USER=some-shared-username
+    WEBAPP_PASSWORD=some-shared-password
+
+then `make run-dashboard` again. It prints the URL to share (your machine's
+LAN address). Every visitor's browser will prompt for that username/password
+once and remember it.
+
+**Both `WEBAPP_USER` and `WEBAPP_PASSWORD` are required whenever `WEBAPP_HOST`
+isn't localhost — the server refuses to start otherwise.** This dashboard can
+trigger real traffic on the lab hardware; opening it to the network with no
+login would let anyone who can reach the machine do that. The one-test-at-a-
+time rule is enforced server-side regardless of how many people are looking
+at it, same as running it solo.
+
 ## Design
 
 See `DESIGN.md` for the color/type/component tokens this UI is built

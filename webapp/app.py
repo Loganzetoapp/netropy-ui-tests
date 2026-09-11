@@ -8,13 +8,18 @@ fail to resolve `webapp` as a package).
 """
 from __future__ import annotations
 
+import base64
 import json
+import os
+import secrets
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from webapp.catalog import discover_groups
 from webapp.persistence import list_batches
@@ -190,7 +195,109 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-if __name__ == "__main__":
-    import uvicorn
+# --- Sharing this dashboard beyond localhost -------------------------------
+#
+# By default this only listens on 127.0.0.1 (your own machine) with no
+# login — that's unchanged. Sharing it with other people means other
+# machines can reach a tool that can trigger real traffic on the lab
+# hardware, so that mode requires a login (WEBAPP_USER/WEBAPP_PASSWORD in
+# .env) and the server refuses to start without one. See webapp/README.md.
+#
+# Deliberately kept out of any code that runs at import time (nothing here
+# runs unless this file is executed directly) so importing this module for
+# tests never depends on ambient .env contents.
 
-    uvicorn.run("webapp.app:app", host="127.0.0.1", port=8765, reload=False)
+
+def _is_loopback_host(host: str) -> bool:
+    return host in ("127.0.0.1", "localhost", "::1")
+
+
+def _check_basic_auth(header_value: Optional[str], user: str, password: str) -> bool:
+    if not header_value or not header_value.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header_value[len("Basic "):]).decode("utf-8")
+        supplied_user, _, supplied_password = decoded.partition(":")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    # constant-time comparison — this gates real traffic on shared hardware
+    return secrets.compare_digest(supplied_user, user) and secrets.compare_digest(
+        supplied_password, password
+    )
+
+
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, user: str, password: str):
+        super().__init__(app)
+        self._user = user
+        self._password = password
+
+    async def dispatch(self, request, call_next):
+        if _check_basic_auth(request.headers.get("authorization"), self._user, self._password):
+            return await call_next(request)
+        return Response(
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Netropy Test Dashboard"'},
+        )
+
+
+def _guess_lan_ip() -> Optional[str]:
+    """Best-effort LAN-facing IP to print for people sharing this dashboard.
+    Opens a UDP "connect" to a public address — this never actually sends a
+    packet (UDP connect just picks the local route/interface), it's just the
+    standard trick for asking the OS "which of my IPs would this traffic use",
+    which is far more reliable than gethostbyname(gethostname()) on machines
+    where the hostname resolves to loopback."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
+def _validate_sharing_config(host: str, user: Optional[str], password: Optional[str]) -> None:
+    """Refuse a non-loopback bind with no credentials configured. This
+    dashboard can trigger real traffic on shared lab hardware — opening it
+    to the network without a login would let anyone who can reach this
+    machine do that. Loopback stays credential-free by default, unchanged."""
+    if not _is_loopback_host(host) and not (user and password):
+        raise SystemExit(
+            f"Refusing to start on host {host!r} (not localhost) without both "
+            "WEBAPP_USER and WEBAPP_PASSWORD set in .env — anyone who can reach "
+            "this machine could otherwise trigger real traffic on the lab "
+            "hardware with no login at all. Set both in .env, or unset WEBAPP_HOST "
+            "to go back to localhost-only. See webapp/README.md."
+        )
+
+
+if __name__ == "__main__":
+    import socket
+
+    import uvicorn
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
+    host = os.environ.get("WEBAPP_HOST", "127.0.0.1")
+    port = int(os.environ.get("WEBAPP_PORT", "8765"))
+    user = os.environ.get("WEBAPP_USER")
+    password = os.environ.get("WEBAPP_PASSWORD")
+
+    _validate_sharing_config(host, user, password)
+    if user and password:
+        app.add_middleware(BasicAuthMiddleware, user=user, password=password)
+        print(f"Netropy Test Dashboard (login required): http://{host}:{port}/", flush=True)
+    else:
+        print(f"Netropy Test Dashboard: http://{host}:{port}/", flush=True)
+
+    if not _is_loopback_host(host):
+        lan_ip = _guess_lan_ip()
+        if lan_ip:
+            print(f"  From another machine on the network: http://{lan_ip}:{port}/", flush=True)
+
+    # Passing the app object directly (not the "webapp.app:app" string form)
+    # avoids uvicorn re-importing this module under a different name — that
+    # second import wouldn't hit this __main__ block, so the middleware just
+    # added above would silently vanish from the server uvicorn actually runs.
+    uvicorn.run(app, host=host, port=port, reload=False)
