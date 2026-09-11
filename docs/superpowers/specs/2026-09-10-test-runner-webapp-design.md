@@ -22,19 +22,31 @@ hand).
 
 ## Module tabs
 
-Top-level navigation is one tab per Netropy product module, taken directly
-from the product's own "Create Testbed" module picker (screenshot provided
-2026-09-10) — not invented:
+Top-level navigation is one tab per Netropy product module. The name list
+comes from the product's own "Create Testbed" module picker (screenshot
+provided 2026-09-10); two more (AppStorm, Attack Library) came with their
+own branded icon directly from Logan (2026-09-10, second batch) and are
+included too since real artwork exists for them — nothing here is
+invented:
 
 - **Traffic Generator** — populated now; wraps this repo's existing test suite.
-- Session Strike, RFC 2544, RFC 9411, AppPlayback, DDoS Storm, DNS Storm,
-  VoIP / SIP, OTT Video, ThreatStorm, PQC — all render as a clean
-  "coming soon" empty state (icon + module name + one line: "Test coverage
-  for this module hasn't been built yet.").
+- Session Strike, RFC 2544, RFC 9411, AppPlayback, AppStorm, DDoS Storm,
+  DNS Storm, VoIP / SIP, OTT Video, ThreatStorm, PQC, Attack Library — all
+  render as a clean "coming soon" empty state (icon + module name + one
+  line: "Test coverage for this module hasn't been built yet.").
 
-Tabs are a static list for now (11 entries, one real). No mechanism needed
-to add tabs dynamically — that's a future problem for whenever a second
-module gets real coverage.
+**13 tabs total, each with a real icon** — `webapp/static/icons/*.png`.
+8 are cropped from Logan's product screenshots (icon-only, label text
+removed — rendered separately in this app's own type per `DESIGN.md`,
+not baked into the image); the other 5 (RFC 9411, VoIP/SIP, OTT Video,
+ThreatStorm, PQC — no source artwork existed for these) were drawn to
+match the same two-tone style, colors sampled directly from the real
+icons (`#27397A` navy linework, `#399E90` teal accent) rather than
+approximated.
+
+Tabs are a static list for now. No mechanism needed to add tabs
+dynamically — that's a future problem for whenever a second module gets
+real coverage.
 
 ## Test discovery ("catalog")
 

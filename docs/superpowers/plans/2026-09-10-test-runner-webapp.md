@@ -129,9 +129,40 @@ Dark: `background: #16294A`, white text, `border-radius: 6px`,
 
 `webapp/static/apposite-logo.png` — header, left-aligned, ~28px tall,
 next to the app name in `--ink`.
+
+## Module tab icons
+
+`webapp/static/icons/*.png` — one per module tab, icon-only (no baked-in
+label; labels render in this app's own type, per Typography above), all
+in the same two-tone style: `#27397A` navy linework, `#399E90` teal
+accent, transparent background. 8 are cropped directly from real Netropy
+product artwork; 5 (`rfc-9411`, `voip-sip`, `ott-video`, `threatstorm`,
+`pqc` — no source artwork existed for these) were drawn to match, same
+two colors sampled from the real ones. Displayed at a small, consistent
+size (~28px tall) in the tab bar and larger (~64px) in the "coming soon"
+empty state. Full mapping:
+
+| Module | Icon file |
+|---|---|
+| Traffic Generator | `traffic-engine.png` |
+| Session Strike | `session-strike.png` |
+| RFC 2544 | `rfc-2544.png` |
+| RFC 9411 | `rfc-9411.png` |
+| AppPlayback | `app-playback.png` |
+| AppStorm | `app-storm.png` |
+| DDoS Storm | `ddos-storm.png` |
+| DNS Storm | `dns-storm.png` |
+| VoIP / SIP | `voip-sip.png` |
+| OTT Video | `ott-video.png` |
+| ThreatStorm | `threatstorm.png` |
+| PQC | `pqc.png` |
+| Attack Library | `attack-library.png` |
 ```
 
-- [ ] **Step 2: Copy the logo asset**
+- [ ] **Step 2: Copy the logo + icon assets**
+
+The 13 module icons already exist at `webapp/static/icons/*.png` (cropped/drawn
+2026-09-10 — see the table above). Just add the header logo:
 
 ```bash
 mkdir -p webapp/static
@@ -141,8 +172,8 @@ cp "/Users/loganzeto/Downloads/ap logo.png" webapp/static/apposite-logo.png
 - [ ] **Step 3: Commit**
 
 ```bash
-git add webapp/DESIGN.md webapp/static/apposite-logo.png
-git commit -m "docs: add webapp design tokens + logo asset"
+git add webapp/DESIGN.md webapp/static/apposite-logo.png webapp/static/icons/
+git commit -m "docs: add webapp design tokens, logo, and 13 module tab icons"
 ```
 
 ---
@@ -1313,16 +1344,18 @@ from fastapi.testclient import TestClient
 import webapp.app as app_module
 
 
-def test_modules_endpoint_lists_traffic_generator_and_ten_future_modules():
+def test_modules_endpoint_lists_traffic_generator_and_twelve_future_modules():
     client = TestClient(app_module.app)
     data = client.get("/api/modules").json()
-    assert len(data["modules"]) == 11
+    assert len(data["modules"]) == 13
     assert data["modules"][0] == {
         "id": "traffic-generator",
         "name": "Traffic Generator",
+        "icon": "/static/icons/traffic-engine.png",
         "available": True,
     }
     assert all(m["available"] is False for m in data["modules"][1:])
+    assert all(m["icon"].startswith("/static/icons/") for m in data["modules"])
 
 
 def test_catalog_endpoint_returns_real_groups():
@@ -1395,9 +1428,21 @@ STATIC_DIR = Path(__file__).parent / "static"
 app = FastAPI(title="Netropy Test Dashboard")
 runner = TestRunner()
 
+# (name, icon filename under webapp/static/icons/) — see DESIGN.md's
+# "Module tab icons" table for where each one came from.
 FUTURE_MODULES = [
-    "Session Strike", "RFC 2544", "RFC 9411", "AppPlayback", "DDoS Storm",
-    "DNS Storm", "VoIP / SIP", "OTT Video", "ThreatStorm", "PQC",
+    ("Session Strike", "session-strike.png"),
+    ("RFC 2544", "rfc-2544.png"),
+    ("RFC 9411", "rfc-9411.png"),
+    ("AppPlayback", "app-playback.png"),
+    ("AppStorm", "app-storm.png"),
+    ("DDoS Storm", "ddos-storm.png"),
+    ("DNS Storm", "dns-storm.png"),
+    ("VoIP / SIP", "voip-sip.png"),
+    ("OTT Video", "ott-video.png"),
+    ("ThreatStorm", "threatstorm.png"),
+    ("PQC", "pqc.png"),
+    ("Attack Library", "attack-library.png"),
 ]
 
 
@@ -1409,14 +1454,22 @@ class RunRequest(BaseModel):
 @app.get("/api/modules")
 def get_modules():
     return {
-        "modules": [{"id": "traffic-generator", "name": "Traffic Generator", "available": True}]
+        "modules": [
+            {
+                "id": "traffic-generator",
+                "name": "Traffic Generator",
+                "icon": "/static/icons/traffic-engine.png",
+                "available": True,
+            }
+        ]
         + [
             {
                 "id": name.lower().replace(" ", "-").replace("/", ""),
                 "name": name,
+                "icon": f"/static/icons/{icon}",
                 "available": False,
             }
-            for name in FUTURE_MODULES
+            for name, icon in FUTURE_MODULES
         ]
     }
 
@@ -1668,7 +1721,10 @@ body {
   overflow-x: auto;
 }
 .tab {
-  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--ink-dim);
@@ -1678,7 +1734,9 @@ body {
   border-bottom: 2px solid transparent;
   white-space: nowrap;
 }
+.tab img { height: 20px; width: auto; opacity: 0.55; }
 .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab.active img { opacity: 1; }
 
 main { max-width: 960px; margin: 0 auto; padding: 24px; }
 
@@ -1687,7 +1745,7 @@ main { max-width: 960px; margin: 0 auto; padding: 24px; }
   padding: 60px 20px;
   color: var(--ink-dim);
 }
-.coming-soon .lock { font-size: 32px; opacity: 0.4; margin-bottom: 8px; }
+.coming-soon img { height: 64px; width: auto; opacity: 0.7; margin-bottom: 12px; }
 
 .page-nav {
   display: flex; gap: 8px; padding: 12px 24px 0; max-width: 960px; margin: 0 auto;
@@ -1787,7 +1845,7 @@ async function loadModules() {
   modules.forEach((m, i) => {
     const btn = document.createElement("button");
     btn.className = "tab" + (i === 0 ? " active" : "");
-    btn.textContent = m.name;
+    btn.innerHTML = `<img src="${m.icon}" alt=""><span>${m.name}</span>`;
     btn.addEventListener("click", () => selectModule(m, btn));
     nav.appendChild(btn);
   });
@@ -1801,7 +1859,7 @@ function selectModule(module, btn) {
   if (!module.available) {
     panel.innerHTML = `
       <div class="coming-soon">
-        <div class="lock">&#128274;</div>
+        <img src="${module.icon}" alt="">
         <h2>${module.name}</h2>
         <p>Test coverage for this module hasn't been built yet.</p>
       </div>`;
@@ -1839,7 +1897,7 @@ loadModules();
 ```bash
 python -m webapp.app
 ```
-Open `http://127.0.0.1:8765/` in a browser. Expected: header with logo, 11 tabs (Traffic Generator active/first, 10 others), clicking any of the 10 others shows the "coming soon" empty state with that module's real name, clicking back to Traffic Generator shows "Loading tests…". Stop the server (Ctrl+C).
+Open `http://127.0.0.1:8765/` in a browser. Expected: header with logo, 13 tabs each with its own icon (Traffic Generator active/first, 12 others dimmed until active), clicking any of the 12 others shows the "coming soon" empty state with that module's real name and a larger version of its icon, clicking back to Traffic Generator shows "Loading tests…". Stop the server (Ctrl+C).
 
 - [ ] **Step 5: Commit**
 
@@ -2225,7 +2283,7 @@ Expected: all backend unit tests pass (catalog, persistence, runner, app — fro
 python -m webapp.app
 ```
 In the browser, confirm all of:
-- [ ] All 11 tabs render; 10 show "coming soon" with the correct module name; Traffic Generator is populated.
+- [ ] All 13 tabs render, each with its own icon; 12 show "coming soon" with the correct module name and icon; Traffic Generator is populated.
 - [ ] Every group under Traffic Generator matches a real `tests/` subdirectory — no invented names, no combined `_all.py` files listed as separate tests, no quarantined tests visible.
 - [ ] Clicking a test row expands its full docstring; clicking again collapses it.
 - [ ] Running a `hardware_free` test at repeat count 1 shows live status through to a final result.
