@@ -84,7 +84,14 @@ def _decorator_marker_name(node: ast.expr) -> Optional[str]:
 
 
 def _parse_file(path: Path, repo_root: Path) -> Optional[TestFile]:
-    tree = ast.parse(path.read_text(), filename=str(path))
+    try:
+        tree = ast.parse(path.read_text(), filename=str(path))
+    except SyntaxError as exc:
+        # One bad file must never take down discovery (and therefore the
+        # whole /api/catalog endpoint / dashboard) for every other file —
+        # skip just this one and keep going.
+        print(f"catalog: skipping {path} — syntax error: {exc}")
+        return None
     docstring = ast.get_docstring(tree) or ""
     if not docstring:
         return None

@@ -115,3 +115,35 @@ def test_t9_quarantined_thing(dashboard):
 
     # t9's only test is quarantined -> zero visible tests -> group excluded
     assert "t9_network_profiles" not in {g.id for g in groups}
+
+
+def test_discover_groups_skips_file_with_syntax_error_but_finds_rest(tmp_path):
+    """A single unparseable test file (e.g. mid-edit, or a bad merge)
+    must not 500 the whole /api/catalog endpoint — it should be skipped,
+    with every other file still discovered normally."""
+    tests_root = tmp_path / "tests"
+
+    _write(
+        tests_root / "t1_auth" / "test_t1_broken.py",
+        '''"""T1 — this file has a syntax error."""
+import pytest
+
+def test_t1_broken(dashboard)
+    pass
+''',
+    )
+    _write(
+        tests_root / "t1_auth" / "test_t1_valid_login.py",
+        '''"""T1 — valid login lands on dashboard."""
+import pytest
+
+
+@pytest.mark.hardware_free
+def test_t1_valid_login(dashboard):
+    pass
+''',
+    )
+
+    groups = discover_groups(tests_root, repo_root=tmp_path)
+    t1 = next(g for g in groups if g.id == "t1_auth")
+    assert [f.path for f in t1.files] == ["tests/t1_auth/test_t1_valid_login.py"]
