@@ -57,6 +57,48 @@ def _fake_subprocess_run_factory(history_dir, outcome="pass", stored_suffix=""):
     return _fake_run
 
 
+def test_headed_flag_appends_flag_to_command(tmp_path):
+    history_dir = tmp_path / "history"
+    captured_cmds = []
+
+    def _fake_run(cmd, cwd, env, capture_output, text, timeout):
+        captured_cmds.append(cmd)
+        return _fake_subprocess_run_factory(history_dir, "pass")(
+            cmd, cwd, env, capture_output, text, timeout
+        )
+
+    runner = TestRunner(repo_root=tmp_path, history_dir=history_dir, subprocess_run=_fake_run)
+    batch_id = runner.start(
+        "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login",
+        "hardware_free",
+        1,
+        headed=True,
+    )
+    list(runner.events(batch_id))
+    assert "--headed" in captured_cmds[0]
+    # nodeid stays at the same index regardless of the flag — callers
+    # (e.g. the test fakes above) rely on cmd[3] being the nodeid.
+    assert captured_cmds[0][3] == "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login"
+
+
+def test_headed_defaults_false_and_omits_flag(tmp_path):
+    history_dir = tmp_path / "history"
+    captured_cmds = []
+
+    def _fake_run(cmd, cwd, env, capture_output, text, timeout):
+        captured_cmds.append(cmd)
+        return _fake_subprocess_run_factory(history_dir, "pass")(
+            cmd, cwd, env, capture_output, text, timeout
+        )
+
+    runner = TestRunner(repo_root=tmp_path, history_dir=history_dir, subprocess_run=_fake_run)
+    batch_id = runner.start(
+        "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login", "hardware_free", 1
+    )
+    list(runner.events(batch_id))
+    assert "--headed" not in captured_cmds[0]
+
+
 def test_single_passing_run(tmp_path):
     history_dir = tmp_path / "history"
     runner = TestRunner(

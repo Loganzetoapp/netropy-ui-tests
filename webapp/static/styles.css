@@ -161,6 +161,11 @@ main { max-width: 960px; margin: 0 auto; padding: 24px; }
   border: 1px solid var(--border); border-radius: 6px; font-size: 14px;
 }
 .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(29,78,143,0.15); }
+.field-checkbox {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;
+  color: var(--ink); margin-bottom: 16px; cursor: pointer;
+}
+.field-checkbox input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
 
 .results-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
 .results-table th {

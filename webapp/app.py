@@ -47,6 +47,7 @@ FUTURE_MODULES = [
 class RunRequest(BaseModel):
     nodeid: str
     repeat_count: int = 1
+    headed: bool = False
 
 
 @app.get("/api/modules")
@@ -117,7 +118,7 @@ def _marker_for(nodeid: str) -> str:
 def start_run(req: RunRequest):
     marker = _marker_for(req.nodeid)
     try:
-        batch_id = runner.start(req.nodeid, marker, req.repeat_count)
+        batch_id = runner.start(req.nodeid, marker, req.repeat_count, req.headed)
     except AlreadyRunningError as exc:
         raise HTTPException(409, str(exc))
     return {"batch_id": batch_id}

@@ -36,6 +36,30 @@ def test_unknown_nodeid_returns_404():
     assert resp.status_code == 404
 
 
+def test_headed_flag_defaults_false_and_passes_through(monkeypatch):
+    import webapp.runner as runner_module
+
+    captured = {}
+
+    class _CapturingRunner:
+        def start(self, nodeid, marker, repeat_count, headed=False):
+            captured["headed"] = headed
+            return "batch-1"
+
+    monkeypatch.setattr(app_module, "runner", _CapturingRunner())
+    client = TestClient(app_module.app)
+    groups = client.get("/api/catalog").json()["groups"]
+    nodeid = groups[0]["files"][0]["tests"][0]["nodeid"]
+
+    resp = client.post("/api/runs", json={"nodeid": nodeid, "repeat_count": 1})
+    assert resp.status_code == 200
+    assert captured["headed"] is False
+
+    resp = client.post("/api/runs", json={"nodeid": nodeid, "repeat_count": 1, "headed": True})
+    assert resp.status_code == 200
+    assert captured["headed"] is True
+
+
 def test_second_concurrent_run_returns_409(monkeypatch):
     import webapp.runner as runner_module
 

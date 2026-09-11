@@ -174,6 +174,7 @@ function openRunModal(nodeid, marker, triggerEl) {
   document.getElementById("run-modal-confirm").textContent = "Run";
   const countInput = document.getElementById("run-modal-count");
   countInput.value = 1;
+  document.getElementById("run-modal-headed").checked = false;
   document.getElementById("run-modal").hidden = false;
   // Land keyboard focus in the field people are most likely to change,
   // with its default value pre-selected so typing overwrites it.
@@ -197,6 +198,7 @@ function openRunAllModal(nodeids, groupName, statefulCount, triggerEl) {
   warning.hidden = false;
   document.getElementById("run-modal-count-field").hidden = true;
   document.getElementById("run-modal-confirm").textContent = "Run all";
+  document.getElementById("run-modal-headed").checked = false;
   document.getElementById("run-modal").hidden = false;
   document.getElementById("run-modal-confirm").focus();
 }
@@ -225,17 +227,18 @@ document.getElementById("run-modal-count").addEventListener("keydown", (e) => {
 });
 
 document.getElementById("run-modal-confirm").addEventListener("click", async () => {
+  const headed = document.getElementById("run-modal-headed").checked;
   if (modalMode === "group") {
     const nodeids = modalGroupNodeids;
     closeRunModal();
-    await runAllInGroup(nodeids);
+    await runAllInGroup(nodeids, headed);
     return;
   }
   const raw = parseInt(document.getElementById("run-modal-count").value, 10);
   const count = Number.isFinite(raw) && raw > 0 ? raw : 1;
   const nodeid = modalNodeid;
   closeRunModal();
-  await startRun(nodeid, count);
+  await startRun(nodeid, count, headed);
 });
 
 // Returns true once the batch is confirmed started (streamRun has taken
@@ -243,12 +246,12 @@ document.getElementById("run-modal-confirm").addEventListener("click", async () 
 // batch already running) — callers that chain multiple runs (see
 // runAllInGroup) need this to know not to wait on a run that never
 // started.
-async function startRun(nodeid, repeatCount) {
+async function startRun(nodeid, repeatCount, headed = false) {
   try {
     const { batch_id } = await fetchJSON("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nodeid, repeat_count: repeatCount }),
+      body: JSON.stringify({ nodeid, repeat_count: repeatCount, headed }),
     });
     streamRun(batch_id, nodeid);
     return true;
@@ -311,9 +314,9 @@ function streamRun(batchId, nodeid) {
   };
 }
 
-async function runAllInGroup(nodeids) {
+async function runAllInGroup(nodeids, headed = false) {
   for (const nodeid of nodeids) {
-    const started = await startRun(nodeid, 1);
+    const started = await startRun(nodeid, 1, headed);
     if (!started) {
       // startRun already alerted with the specific reason (e.g. a 409
       // from another batch running). Without this, the loop would go on

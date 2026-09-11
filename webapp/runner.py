@@ -54,6 +54,7 @@ class _Batch:
     nodeid: str
     marker: str
     repeat_count: int
+    headed: bool = False
     events: "queue.Queue" = field(default_factory=queue.Queue)
     done: bool = False
 
@@ -184,14 +185,20 @@ class TestRunner:
         self._active: Optional[_Batch] = None
         self._batches: dict[str, _Batch] = {}
 
-    def start(self, nodeid: str, marker: str, repeat_count: int) -> str:
+    def start(
+        self, nodeid: str, marker: str, repeat_count: int, headed: bool = False
+    ) -> str:
         with self._lock:
             if self._active is not None and not self._active.done:
                 raise AlreadyRunningError(
                     "A test is already running — try again in a moment."
                 )
             batch = _Batch(
-                id=str(uuid.uuid4()), nodeid=nodeid, marker=marker, repeat_count=repeat_count
+                id=str(uuid.uuid4()),
+                nodeid=nodeid,
+                marker=marker,
+                repeat_count=repeat_count,
+                headed=headed,
             )
             self._active = batch
             self._batches[batch.id] = batch
@@ -215,9 +222,12 @@ class TestRunner:
             batch.events.put(IterationEvent(batch.id, i, batch.repeat_count, "running"))
             env = {**os.environ, "NETROPY_WEBAPP_BATCH_ID": batch.id}
             before = _snapshot_history_files(self._history_dir)
+            cmd = [sys.executable, "-m", "pytest", batch.nodeid, "-m", batch.marker]
+            if batch.headed:
+                cmd.append("--headed")
             try:
                 self._subprocess_run(
-                    [sys.executable, "-m", "pytest", batch.nodeid, "-m", batch.marker],
+                    cmd,
                     cwd=self._repo_root,
                     env=env,
                     capture_output=True,
