@@ -1,35 +1,33 @@
-"""Automated Claude review of dashboard-triggered test failures.
+"""Logs dashboard-triggered test failures into netropy-ui-findings.md for
+later review — no API call, no API key. When a webapp-triggered run fails,
+the failure's evidence (a summary extracted from its Playwright trace:
+action sequence, JS/console errors, non-2xx network responses) is written
+straight into a "pending review" section of the findings doc. Reviewing
+those — reading the trace/screenshot, writing an actual finding, promoting
+it to "Confirmed product issues" or ruling it out — happens later in a
+Claude Code session (ask Claude to review the pending entries), not here.
 
-When a webapp-triggered run fails, this pulls the evidence already being
-captured for the Results page (the failure screenshot, the Playwright
-trace) into a form an LLM can read, asks Claude to write a short,
-evidence-grounded finding, and appends it to netropy-ui-findings.md.
-
-Disabled by default — only active once webapp/app.py's __main__ block
-finds ANTHROPIC_API_KEY in .env and calls TestRunner.enable_failure_review.
 Everything here is best-effort: a failure in this module must never break
 test-run reporting (see the try/except around its call site in runner.py).
 """
 from __future__ import annotations
 
-import base64
 import json
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-MODEL = "claude-sonnet-5"
 MAX_TRACE_SUMMARY_CHARS = 8000
-FINDINGS_SECTION_HEADER = "## Dashboard failure reviews"
+FINDINGS_SECTION_HEADER = "## Dashboard failures — pending review"
 
 
 def _extract_trace_summary(trace_zip_path: Path) -> str:
     """Boil a Playwright trace.zip down to the same kind of evidence a
     human would pull out in the trace viewer: the action sequence (with
     pass/fail per step), any JS/console errors, and any non-2xx network
-    responses — compact enough to hand to an LLM alongside the failure
-    screenshot instead of the whole (often multi-MB, partly binary) zip."""
+    responses — compact enough to embed directly in the findings doc
+    instead of just linking to the (often multi-MB, partly binary) zip."""
     lines: list[str] = []
     try:
         with zipfile.ZipFile(trace_zip_path) as zf:
@@ -108,91 +106,48 @@ def _extract_trace_summary(trace_zip_path: Path) -> str:
     return text or "(no notable events found in trace)"
 
 
-def _load_screenshot_block(screenshot_path: Path) -> Optional[dict]:
-    try:
-        data = screenshot_path.read_bytes()
-    except OSError:
-        return None
-    media_type = "image/png" if screenshot_path.suffix.lower() == ".png" else "image/jpeg"
-    return {
-        "type": "image",
-        "source": {"type": "base64", "media_type": media_type, "data": base64.b64encode(data).decode("ascii")},
-    }
+def _escape_markdown_text(text: str) -> str:
+    """Neutralize `<`/`>`/`&` in dynamic, product/test-generated text
+    before it's embedded in the findings doc — this file gets rendered to
+    HTML for the dashboard's Findings page (see app.py's /api/findings),
+    and unlike the rest of the doc (hand-written by a person), this text
+    comes from pytest failure messages and trace content, which could in
+    principle contain something that reads as markup."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-REVIEW_PROMPT = """You are reviewing a failed automated UI test run against the Netropy \
-Traffic Generator web interface, for an internal findings log. Below is the \
-test that failed, its failure message, and a compact summary extracted from \
-its Playwright trace (action sequence, JS/console errors, any non-2xx \
-network responses). A screenshot taken at the moment of failure may also be \
-attached.
-
-Test: {nodeid}
-Failure message: {detail}
-
-Trace summary:
-{trace_summary}
-
-Write a short, evidence-grounded finding (3-6 sentences) for the findings \
-log. Cite specific evidence — exact status codes, exact error text, exact \
-actions — rather than vague summaries. State plainly whether this looks \
-like a real product bug, a test/selector issue, or is inconclusive from \
-this one run, and say what evidence supports that read. This is a single \
-run, not a reproduced/confirmed issue — say what the evidence does and \
-doesn't show rather than declaring something "confirmed". Do not add a \
-heading or restate the test name — write only the finding text."""
-
-
-def review_failure(
-    nodeid: str,
-    detail: Optional[str],
-    screenshot_path: Optional[Path],
-    trace_path: Optional[Path],
-    client,
-) -> str:
-    """Ask Claude to write an evidence-grounded finding for one failed
-    iteration. `client` is an injected Anthropic-SDK-shaped object (an
-    `anthropic.Anthropic(...)` instance in production, a fake with a
-    matching `.messages.create(...)` in tests) so this never needs a real
-    API key or network access to be tested."""
-    trace_summary = _extract_trace_summary(trace_path) if trace_path else "(no trace captured)"
-    content: list[dict] = [
-        {
-            "type": "text",
-            "text": REVIEW_PROMPT.format(
-                nodeid=nodeid, detail=detail or "(none)", trace_summary=trace_summary
-            ),
-        }
-    ]
-    if screenshot_path:
-        image_block = _load_screenshot_block(screenshot_path)
-        if image_block:
-            content.append(image_block)
-
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=600,
-        messages=[{"role": "user", "content": content}],
-    )
-    return "".join(
-        block.text for block in response.content if getattr(block, "type", None) == "text"
-    ).strip()
-
-
-def append_finding(
+def queue_pending_review(
     findings_path: Path,
     nodeid: str,
-    review_text: str,
+    detail: Optional[str],
     screenshot_rel: Optional[str],
     trace_rel: Optional[str],
+    trace_path: Optional[Path],
 ) -> None:
-    """Append one automated review to netropy-ui-findings.md — append-only,
-    so a human editing the file at the same time never has their edits
-    overwritten. Creates the section header (with a note distinguishing
-    these from the manually-reproduced/confirmed section above) the first
-    time this is called."""
+    """Append one failed iteration to netropy-ui-findings.md's pending-
+    review queue. Append-only, so a human editing the file at the same
+    time never has their edits overwritten. Creates the section header
+    (with a note on how these differ from the confirmed section above)
+    the first time this is called."""
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    entry_lines = [f"### {timestamp} — {nodeid}", "", review_text.strip(), ""]
+    trace_summary = _extract_trace_summary(trace_path) if trace_path else "(no trace captured)"
+
+    entry_lines = [
+        f"### {timestamp} — {nodeid}",
+        "",
+        "**Status:** pending review",
+        "",
+        f"Failure message: {_escape_markdown_text(detail) if detail else '(none)'}",
+        "",
+        "Trace summary:",
+        "```",
+        # Not escaped: this is going inside a fenced code block, which the
+        # markdown renderer already HTML-escapes on its own when producing
+        # <pre><code> — escaping it here too would corrupt the raw .md
+        # file for anyone reading it directly (e.g. "->" becoming "-&gt;").
+        trace_summary,
+        "```",
+    ]
     if screenshot_rel:
         entry_lines.append(f"Screenshot: `{screenshot_rel}`")
     if trace_rel:
@@ -203,9 +158,12 @@ def append_finding(
     existing = findings_path.read_text() if findings_path.exists() else ""
     if FINDINGS_SECTION_HEADER not in existing:
         preamble = (
-            "\nAutomatically generated by Claude when a test fails through the "
-            "dashboard — each entry reflects one run's evidence, not an "
-            "independently reproduced/confirmed bug like the section above.\n\n"
+            "\nLogged automatically when a test fails through the dashboard — "
+            "each entry is one run's raw evidence, not yet reviewed. Ask Claude "
+            "to review the pending entries in a session: it reads the trace/"
+            "screenshot and either promotes a real one to \"Confirmed product "
+            "issues\" above, or notes why it isn't (test/selector issue, "
+            "inconclusive, etc.), then marks the entry reviewed.\n\n"
         )
         block = f"\n{FINDINGS_SECTION_HEADER}\n{preamble}{entry}"
     else:

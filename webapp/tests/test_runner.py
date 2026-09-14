@@ -134,34 +134,7 @@ def test_failing_run_reports_failure_message(tmp_path):
     assert events[1].detail == "boom"
 
 
-class _FakeReviewTextBlock:
-    def __init__(self, text):
-        self.type = "text"
-        self.text = text
-
-
-class _FakeReviewResponse:
-    def __init__(self, text):
-        self.content = [_FakeReviewTextBlock(text)]
-
-
-class _FakeReviewClient:
-    """Records every call made through it — enough to assert on without
-    a real Anthropic API key or network access."""
-
-    def __init__(self, response_text="Looks like a real product bug."):
-        self._response_text = response_text
-        self.calls = []
-
-        class _Messages:
-            def create(_self, **kwargs):
-                self.calls.append(kwargs)
-                return _FakeReviewResponse(self._response_text)
-
-        self.messages = _Messages()
-
-
-def test_failure_review_invoked_and_appended_when_enabled(tmp_path):
+def test_failing_run_is_queued_for_review_automatically(tmp_path):
     history_dir = tmp_path / "history"
     findings_path = tmp_path / "netropy-ui-findings.md"
     runner = TestRunner(
@@ -170,37 +143,19 @@ def test_failure_review_invoked_and_appended_when_enabled(tmp_path):
         subprocess_run=_fake_subprocess_run_factory(history_dir, "fail"),
         findings_path=findings_path,
     )
-    client = _FakeReviewClient("This is a genuine product bug based on the 403.")
-    runner.enable_failure_review(client)
+    # No opt-in step — queuing is unconditional and needs no API key.
 
     batch_id = runner.start("tests/x.py::test_x", "hardware_free", 1)
     list(runner.events(batch_id))
 
-    assert len(client.calls) == 1
     assert findings_path.exists()
     content = findings_path.read_text()
-    assert "This is a genuine product bug based on the 403." in content
     assert "tests/x.py::test_x" in content
+    assert "**Status:** pending review" in content
+    assert "Failure message: boom" in content
 
 
-def test_failure_review_not_invoked_when_disabled(tmp_path):
-    history_dir = tmp_path / "history"
-    findings_path = tmp_path / "netropy-ui-findings.md"
-    runner = TestRunner(
-        repo_root=tmp_path,
-        history_dir=history_dir,
-        subprocess_run=_fake_subprocess_run_factory(history_dir, "fail"),
-        findings_path=findings_path,
-    )
-    # enable_failure_review() never called — review_client stays None.
-
-    batch_id = runner.start("tests/x.py::test_x", "hardware_free", 1)
-    list(runner.events(batch_id))
-
-    assert not findings_path.exists()
-
-
-def test_failure_review_not_invoked_on_passing_run(tmp_path):
+def test_passing_run_is_not_queued_for_review(tmp_path):
     history_dir = tmp_path / "history"
     findings_path = tmp_path / "netropy-ui-findings.md"
     runner = TestRunner(
@@ -209,13 +164,10 @@ def test_failure_review_not_invoked_on_passing_run(tmp_path):
         subprocess_run=_fake_subprocess_run_factory(history_dir, "pass"),
         findings_path=findings_path,
     )
-    client = _FakeReviewClient()
-    runner.enable_failure_review(client)
 
     batch_id = runner.start("tests/x.py::test_x", "hardware_free", 1)
     list(runner.events(batch_id))
 
-    assert len(client.calls) == 0
     assert not findings_path.exists()
 
 

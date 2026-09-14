@@ -26,6 +26,8 @@ directly, see the comment in `app.py`.) Then open the URL it prints
 - **Results** tab: every run's history, persisted in `results/history/`
   (the same files the plain CLI-driven suite and `results/index.html`
   already use) — survives restarts.
+- **Findings** tab: `netropy-ui-findings.md`, rendered in the browser —
+  no need to open the file in an editor to see what's been found.
 - Exactly one test runs at a time, globally, enforced server-side.
 
 ## Sharing the dashboard
@@ -51,18 +53,23 @@ login would let anyone who can reach the machine do that. The one-test-at-a-
 time rule is enforced server-side regardless of how many people are looking
 at it, same as running it solo.
 
-## Automatic failure review
+## Failure review queue
 
-Set `ANTHROPIC_API_KEY` in `.env` and every dashboard-triggered test
-failure gets automatically reviewed: the failure screenshot and a summary
-extracted from its Playwright trace (action sequence, JS/console errors,
-any non-2xx network responses) are sent to Claude, and the resulting
-evidence-grounded finding is appended to `netropy-ui-findings.md` under
-"Dashboard failure reviews" — timestamped, with links back to the
-screenshot/trace. These are single-run automated reads, kept in their own
-section rather than mixed into the manually-reproduced "Confirmed product
-issues" section above it. Leave `ANTHROPIC_API_KEY` unset to disable —
-this costs a real API call per failed run.
+Every dashboard-triggered test failure is automatically logged to
+`netropy-ui-findings.md`, under "Dashboard failures — pending review" —
+timestamped, with the failure message, a summary extracted from its
+Playwright trace (action sequence, JS/console errors, any non-2xx network
+responses), and links to the screenshot/trace. No API key, no cost, no
+extra setup — always on.
+
+These entries are raw evidence, not yet reviewed. To actually review one:
+ask Claude, in a Claude Code session in this repo, to review the pending
+entries — it reads the trace/screenshot the same way it would if you
+handed it the file directly, then either promotes a real one into
+"Confirmed product issues" above (with what makes it confirmed) or notes
+why it isn't (test/selector issue, inconclusive, etc.), and marks the
+entry reviewed. The **Findings** tab in the dashboard is the easiest way
+to see what's piled up in the queue between review sessions.
 
 ## Design
 

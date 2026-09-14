@@ -1,17 +1,14 @@
-"""Tests for automated Claude review of dashboard-triggered failures. No
-real API calls — the Anthropic client is always a fake here. Run with:
-    pytest --confcutdir=webapp webapp/tests/test_failure_review.py -v
+"""Tests for the dashboard-failure pending-review queue. No API calls, no
+network access — this only ever writes to netropy-ui-findings.md. Run
+with: pytest --confcutdir=webapp webapp/tests/test_failure_review.py -v
 """
 import json
 import zipfile
 
-import pytest
-
 from webapp.failure_review import (
     FINDINGS_SECTION_HEADER,
     _extract_trace_summary,
-    append_finding,
-    review_failure,
+    queue_pending_review,
 )
 
 
@@ -111,90 +108,54 @@ def test_extract_trace_summary_handles_corrupt_zip_gracefully(tmp_path):
     assert "could not be read" in summary
 
 
-class _FakeTextBlock:
-    def __init__(self, text):
-        self.type = "text"
-        self.text = text
-
-
-class _FakeResponse:
-    def __init__(self, text):
-        self.content = [_FakeTextBlock(text)]
-
-
-class _FakeMessages:
-    def __init__(self, response_text):
-        self.response_text = response_text
-        self.calls = []
-
-    def create(self, **kwargs):
-        self.calls.append(kwargs)
-        return _FakeResponse(self.response_text)
-
-
-class _FakeClient:
-    def __init__(self, response_text="This looks like a real product bug."):
-        self.messages = _FakeMessages(response_text)
-
-
-def test_review_failure_sends_trace_summary_and_returns_text(tmp_path):
-    trace_zip = tmp_path / "trace.zip"
-    _write_real_shaped_trace_zip(trace_zip)
-    client = _FakeClient("The 403 on release indicates a real permission bug.")
-
-    result = review_failure(
-        "tests/foo.py::test_bar", "Expect failed", None, trace_zip, client
-    )
-
-    assert result == "The 403 on release indicates a real permission bug."
-    assert len(client.messages.calls) == 1
-    sent = client.messages.calls[0]
-    assert sent["model"] == "claude-sonnet-5"
-    prompt_text = sent["messages"][0]["content"][0]["text"]
-    assert "tests/foo.py::test_bar" in prompt_text
-    assert "403" in prompt_text  # trace summary made it into the prompt
-
-
-def test_review_failure_attaches_screenshot_when_present(tmp_path):
-    screenshot = tmp_path / "failed.png"
-    screenshot.write_bytes(b"\x89PNG\r\n\x1a\nfake-png-bytes")
-    client = _FakeClient()
-
-    review_failure("tests/foo.py::test_bar", None, screenshot, None, client)
-
-    content = client.messages.calls[0]["messages"][0]["content"]
-    assert any(block.get("type") == "image" for block in content)
-
-
-def test_review_failure_omits_image_block_when_no_screenshot(tmp_path):
-    client = _FakeClient()
-    review_failure("tests/foo.py::test_bar", None, None, None, client)
-    content = client.messages.calls[0]["messages"][0]["content"]
-    assert all(block.get("type") != "image" for block in content)
-
-
-def test_append_finding_creates_section_header_once(tmp_path):
+def test_queue_pending_review_creates_section_header_once(tmp_path):
     findings = tmp_path / "netropy-ui-findings.md"
     findings.write_text("# Findings\n\n## Confirmed product issues\n\nSomething real.\n")
+    trace_zip = tmp_path / "trace.zip"
+    _write_real_shaped_trace_zip(trace_zip)
 
-    append_finding(findings, "tests/a.py::test_a", "First finding.", "shot1.png", "trace1.zip")
-    append_finding(findings, "tests/b.py::test_b", "Second finding.", None, None)
+    queue_pending_review(
+        findings, "tests/a.py::test_a", "boom", "shot1.png", "trace1.zip", trace_zip
+    )
+    queue_pending_review(findings, "tests/b.py::test_b", None, None, None, None)
 
     content = findings.read_text()
     assert content.count(FINDINGS_SECTION_HEADER) == 1
-    assert "First finding." in content
-    assert "Second finding." in content
     assert "tests/a.py::test_a" in content
     assert "tests/b.py::test_b" in content
+    assert "Failure message: boom" in content
     assert "Screenshot: `shot1.png`" in content
     assert "Trace: `trace1.zip`" in content
+    assert "**Status:** pending review" in content
+    # the real trace evidence must be embedded, not just linked
+    assert "POST http://box/ports/1/release -> 403 Forbidden" in content
     # pre-existing content must survive untouched
     assert "## Confirmed product issues" in content
     assert "Something real." in content
 
 
-def test_append_finding_creates_file_if_missing(tmp_path):
+def test_queue_pending_review_creates_file_if_missing(tmp_path):
     findings = tmp_path / "netropy-ui-findings.md"
-    append_finding(findings, "tests/a.py::test_a", "A finding.", None, None)
+    queue_pending_review(findings, "tests/a.py::test_a", "boom", None, None, None)
     assert findings.exists()
-    assert "A finding." in findings.read_text()
+    assert "tests/a.py::test_a" in findings.read_text()
+
+
+def test_queue_pending_review_escapes_html_like_content(tmp_path):
+    """Dynamic content (failure messages, trace text) ends up rendered as
+    HTML on the dashboard's Findings page (see app.py's /api/findings) —
+    anything that looks like a tag must render as visible text there, not
+    get interpreted as markup."""
+    findings = tmp_path / "netropy-ui-findings.md"
+    queue_pending_review(
+        findings, "tests/a.py::test_a", "<script>alert(1)</script>", None, None, None
+    )
+    content = findings.read_text()
+    assert "<script>" not in content
+    assert "&lt;script&gt;" in content
+
+
+def test_queue_pending_review_handles_no_trace_captured(tmp_path):
+    findings = tmp_path / "netropy-ui-findings.md"
+    queue_pending_review(findings, "tests/a.py::test_a", "boom", None, None, None)
+    assert "(no trace captured)" in findings.read_text()

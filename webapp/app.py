@@ -15,6 +15,7 @@ import secrets
 from pathlib import Path
 from typing import Optional
 
+import markdown
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -182,6 +183,20 @@ def get_results():
     }
 
 
+FINDINGS_PATH = REPO_ROOT / "netropy-ui-findings.md"
+
+
+@app.get("/api/findings")
+def get_findings():
+    if not FINDINGS_PATH.exists():
+        html = "<p>No findings recorded yet.</p>"
+    else:
+        html = markdown.markdown(
+            FINDINGS_PATH.read_text(), extensions=["fenced_code", "tables"]
+        )
+    return {"html": html}
+
+
 # The frontend (index.html, styles.css, app.js, icons, logo) is served
 # under /static — matching the paths /api/modules returns and the ones
 # index.html itself uses. "/" serves index.html directly so the app
@@ -295,13 +310,6 @@ if __name__ == "__main__":
         lan_ip = _guess_lan_ip()
         if lan_ip:
             print(f"  From another machine on the network: http://{lan_ip}:{port}/", flush=True)
-
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
-    if anthropic_key:
-        import anthropic
-
-        runner.enable_failure_review(anthropic.Anthropic(api_key=anthropic_key))
-        print("Automatic Claude failure review: enabled (see netropy-ui-findings.md)", flush=True)
 
     # Passing the app object directly (not the "webapp.app:app" string form)
     # avoids uvicorn re-importing this module under a different name — that

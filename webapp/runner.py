@@ -188,19 +188,6 @@ class TestRunner:
         self._active: Optional[_Batch] = None
         self._batches: dict[str, _Batch] = {}
         self._findings_path = findings_path or (repo_root / "netropy-ui-findings.md")
-        # None = disabled. Deliberately not read from ANTHROPIC_API_KEY here —
-        # see webapp/app.py's __main__ block, which enables this after
-        # load_dotenv() runs, the same pattern used for the auth middleware
-        # (so importing this module never depends on ambient .env state).
-        self._review_client = None
-
-    def enable_failure_review(self, client) -> None:
-        """Turn on automatic Claude review of failed/error iterations —
-        each one gets its evidence (screenshot + trace summary) sent to
-        `client` and the resulting finding appended to
-        netropy-ui-findings.md. `client` is any object exposing
-        `.messages.create(...)` shaped like anthropic.Anthropic()."""
-        self._review_client = client
 
     def start(
         self, nodeid: str, marker: str, repeat_count: int, headed: bool = False
@@ -278,8 +265,8 @@ class TestRunner:
                 passed += 1
             batch.events.put(IterationEvent(batch.id, i, batch.repeat_count, status, detail))
 
-            if status in ("failed", "error") and self._review_client is not None:
-                self._review_and_record(batch.nodeid, detail, test_result)
+            if status in ("failed", "error"):
+                self._queue_failure_review(batch.nodeid, detail, test_result)
 
         batch.done = True
         with self._lock:
@@ -287,24 +274,20 @@ class TestRunner:
                 self._active = None
         batch.events.put(BatchCompleteEvent(batch.id, passed, batch.repeat_count))
 
-    def _review_and_record(
+    def _queue_failure_review(
         self, nodeid: str, detail: Optional[str], test_result: Optional[dict]
     ) -> None:
-        """Best-effort: ask Claude to review this failed iteration and
-        append the finding to netropy-ui-findings.md. Any failure here
-        (bad API key, network error, malformed trace, ...) is logged and
-        swallowed — a failure reviewing a failure must never itself break
-        run reporting."""
+        """Best-effort: log this failed iteration's evidence into
+        netropy-ui-findings.md's pending-review queue (no API call — see
+        failure_review.py). Any failure here (malformed trace, disk
+        error, ...) is logged and swallowed — a failure logging a failure
+        must never itself break run reporting."""
         screenshot_rel = test_result.get("screenshot") if test_result else None
         trace_rel = test_result.get("trace") if test_result else None
-        screenshot_path = (self._repo_root / "results" / screenshot_rel) if screenshot_rel else None
         trace_path = (self._repo_root / "results" / trace_rel) if trace_rel else None
         try:
-            review_text = failure_review.review_failure(
-                nodeid, detail, screenshot_path, trace_path, self._review_client
-            )
-            failure_review.append_finding(
-                self._findings_path, nodeid, review_text, screenshot_rel, trace_rel
+            failure_review.queue_pending_review(
+                self._findings_path, nodeid, detail, screenshot_rel, trace_rel, trace_path
             )
         except Exception as exc:
-            print(f"webapp runner: automated failure review failed: {exc}")
+            print(f"webapp runner: queuing failure review failed: {exc}")

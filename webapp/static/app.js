@@ -339,18 +339,33 @@ async function runAllInGroup(nodeids, headed = false) {
 
 document.getElementById("nav-tests").addEventListener("click", () => showPage("tests"));
 document.getElementById("nav-results").addEventListener("click", () => showPage("results"));
+document.getElementById("nav-findings").addEventListener("click", () => showPage("findings"));
 
 function showPage(page) {
   document.getElementById("nav-tests").classList.toggle("active", page === "tests");
   document.getElementById("nav-results").classList.toggle("active", page === "results");
+  document.getElementById("nav-findings").classList.toggle("active", page === "findings");
   const tabs = document.getElementById("module-tabs");
   const panel = document.getElementById("module-panel");
   if (page === "results") {
     tabs.hidden = true;
     renderResults(panel);
+  } else if (page === "findings") {
+    tabs.hidden = true;
+    renderFindings(panel);
   } else {
     tabs.hidden = false;
     loadModules();
+  }
+}
+
+async function renderFindings(panel) {
+  panel.innerHTML = "<p>Loading findings…</p>";
+  try {
+    const { html } = await fetchJSON("/api/findings");
+    panel.innerHTML = `<div class="findings-content">${html}</div>`;
+  } catch (err) {
+    panel.innerHTML = `<p class="test-desc">Couldn't load findings: ${escapeHtml(err.message)}</p>`;
   }
 }
 

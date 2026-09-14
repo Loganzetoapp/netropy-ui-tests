@@ -28,6 +28,28 @@ def test_catalog_endpoint_returns_real_groups():
     assert "t1_auth" in ids
 
 
+def test_findings_endpoint_renders_markdown_to_html(monkeypatch, tmp_path):
+    findings_file = tmp_path / "netropy-ui-findings.md"
+    findings_file.write_text("# Findings\n\n## Confirmed product issues\n\nSomething real.\n")
+    monkeypatch.setattr(app_module, "FINDINGS_PATH", findings_file)
+
+    client = TestClient(app_module.app)
+    data = client.get("/api/findings").json()
+
+    assert "<h1>Findings</h1>" in data["html"]
+    assert "<h2>Confirmed product issues</h2>" in data["html"]
+    assert "Something real." in data["html"]
+
+
+def test_findings_endpoint_handles_missing_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(app_module, "FINDINGS_PATH", tmp_path / "does-not-exist.md")
+
+    client = TestClient(app_module.app)
+    data = client.get("/api/findings").json()
+
+    assert "No findings recorded yet" in data["html"]
+
+
 def test_unknown_nodeid_returns_404():
     client = TestClient(app_module.app)
     resp = client.post(
