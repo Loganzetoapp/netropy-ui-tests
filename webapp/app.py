@@ -296,6 +296,13 @@ if __name__ == "__main__":
         if lan_ip:
             print(f"  From another machine on the network: http://{lan_ip}:{port}/", flush=True)
 
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        import anthropic
+
+        runner.enable_failure_review(anthropic.Anthropic(api_key=anthropic_key))
+        print("Automatic Claude failure review: enabled (see netropy-ui-findings.md)", flush=True)
+
     # Passing the app object directly (not the "webapp.app:app" string form)
     # avoids uvicorn re-importing this module under a different name — that
     # second import wouldn't hit this __main__ block, so the middleware just

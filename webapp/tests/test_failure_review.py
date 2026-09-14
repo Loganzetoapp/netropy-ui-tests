@@ -1,0 +1,200 @@
+"""Tests for automated Claude review of dashboard-triggered failures. No
+real API calls — the Anthropic client is always a fake here. Run with:
+    pytest --confcutdir=webapp webapp/tests/test_failure_review.py -v
+"""
+import json
+import zipfile
+
+import pytest
+
+from webapp.failure_review import (
+    FINDINGS_SECTION_HEADER,
+    _extract_trace_summary,
+    append_finding,
+    review_failure,
+)
+
+
+def _write_real_shaped_trace_zip(path, include_network_error=True):
+    """A minimal trace.zip using the same event shapes seen in a real
+    Playwright trace (before/after with an Expect failure, a pageError
+    event, a console error, plus a resource-snapshot with a 403) — small
+    enough to hand-write, realistic enough to exercise the real parser."""
+    trace_events = [
+        {
+            "type": "before",
+            "callId": "call@1",
+            "class": "Frame",
+            "method": "click",
+            "params": {"selector": "internal:role=button[name=\"Release\"i]"},
+        },
+        {"type": "after", "callId": "call@1"},
+        {
+            "type": "before",
+            "callId": "call@2",
+            "class": "Frame",
+            "method": "expect",
+            "params": {"selector": "internal:text=\"Available\"s"},
+        },
+        {
+            "type": "after",
+            "callId": "call@2",
+            "error": {"name": "Expect", "message": "Expect failed"},
+        },
+        {
+            "type": "event",
+            "method": "pageError",
+            "params": {"error": {"error": {"message": "SecurityError: blocked"}}},
+        },
+        {"type": "console", "messageType": "error", "text": "Failed to load resource: 403"},
+    ]
+    trace_lines = "\n".join(json.dumps(e) for e in trace_events)
+
+    network_lines = ""
+    if include_network_error:
+        network_events = [
+            {
+                "snapshot": {
+                    "request": {"method": "POST", "url": "http://box/ports/1/release"},
+                    "response": {"status": 403, "statusText": "Forbidden"},
+                }
+            },
+            {
+                "snapshot": {
+                    "request": {"method": "GET", "url": "http://box/"},
+                    "response": {"status": 200, "statusText": "OK"},
+                }
+            },
+        ]
+        network_lines = "\n".join(json.dumps(e) for e in network_events)
+
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("trace.trace", trace_lines)
+        zf.writestr("trace.network", network_lines)
+
+
+def test_extract_trace_summary_includes_action_sequence_and_failure(tmp_path):
+    trace_zip = tmp_path / "trace.zip"
+    _write_real_shaped_trace_zip(trace_zip)
+    summary = _extract_trace_summary(trace_zip)
+    assert "Frame.click" in summary
+    assert "Frame.expect" in summary
+    assert "FAILED: Expect failed" in summary
+
+
+def test_extract_trace_summary_includes_page_and_console_errors(tmp_path):
+    trace_zip = tmp_path / "trace.zip"
+    _write_real_shaped_trace_zip(trace_zip)
+    summary = _extract_trace_summary(trace_zip)
+    assert "Page error (JS exception): SecurityError: blocked" in summary
+    assert "Console error: Failed to load resource: 403" in summary
+
+
+def test_extract_trace_summary_includes_non_2xx_network_responses(tmp_path):
+    trace_zip = tmp_path / "trace.zip"
+    _write_real_shaped_trace_zip(trace_zip)
+    summary = _extract_trace_summary(trace_zip)
+    assert "POST http://box/ports/1/release -> 403 Forbidden" in summary
+    # the 200 response must not be listed as a failure
+    assert "GET http://box/ -> 200" not in summary
+
+
+def test_extract_trace_summary_handles_missing_file_gracefully(tmp_path):
+    summary = _extract_trace_summary(tmp_path / "does-not-exist.zip")
+    assert "could not be read" in summary
+
+
+def test_extract_trace_summary_handles_corrupt_zip_gracefully(tmp_path):
+    bad_zip = tmp_path / "bad.zip"
+    bad_zip.write_bytes(b"not a zip file")
+    summary = _extract_trace_summary(bad_zip)
+    assert "could not be read" in summary
+
+
+class _FakeTextBlock:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class _FakeResponse:
+    def __init__(self, text):
+        self.content = [_FakeTextBlock(text)]
+
+
+class _FakeMessages:
+    def __init__(self, response_text):
+        self.response_text = response_text
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return _FakeResponse(self.response_text)
+
+
+class _FakeClient:
+    def __init__(self, response_text="This looks like a real product bug."):
+        self.messages = _FakeMessages(response_text)
+
+
+def test_review_failure_sends_trace_summary_and_returns_text(tmp_path):
+    trace_zip = tmp_path / "trace.zip"
+    _write_real_shaped_trace_zip(trace_zip)
+    client = _FakeClient("The 403 on release indicates a real permission bug.")
+
+    result = review_failure(
+        "tests/foo.py::test_bar", "Expect failed", None, trace_zip, client
+    )
+
+    assert result == "The 403 on release indicates a real permission bug."
+    assert len(client.messages.calls) == 1
+    sent = client.messages.calls[0]
+    assert sent["model"] == "claude-sonnet-5"
+    prompt_text = sent["messages"][0]["content"][0]["text"]
+    assert "tests/foo.py::test_bar" in prompt_text
+    assert "403" in prompt_text  # trace summary made it into the prompt
+
+
+def test_review_failure_attaches_screenshot_when_present(tmp_path):
+    screenshot = tmp_path / "failed.png"
+    screenshot.write_bytes(b"\x89PNG\r\n\x1a\nfake-png-bytes")
+    client = _FakeClient()
+
+    review_failure("tests/foo.py::test_bar", None, screenshot, None, client)
+
+    content = client.messages.calls[0]["messages"][0]["content"]
+    assert any(block.get("type") == "image" for block in content)
+
+
+def test_review_failure_omits_image_block_when_no_screenshot(tmp_path):
+    client = _FakeClient()
+    review_failure("tests/foo.py::test_bar", None, None, None, client)
+    content = client.messages.calls[0]["messages"][0]["content"]
+    assert all(block.get("type") != "image" for block in content)
+
+
+def test_append_finding_creates_section_header_once(tmp_path):
+    findings = tmp_path / "netropy-ui-findings.md"
+    findings.write_text("# Findings\n\n## Confirmed product issues\n\nSomething real.\n")
+
+    append_finding(findings, "tests/a.py::test_a", "First finding.", "shot1.png", "trace1.zip")
+    append_finding(findings, "tests/b.py::test_b", "Second finding.", None, None)
+
+    content = findings.read_text()
+    assert content.count(FINDINGS_SECTION_HEADER) == 1
+    assert "First finding." in content
+    assert "Second finding." in content
+    assert "tests/a.py::test_a" in content
+    assert "tests/b.py::test_b" in content
+    assert "Screenshot: `shot1.png`" in content
+    assert "Trace: `trace1.zip`" in content
+    # pre-existing content must survive untouched
+    assert "## Confirmed product issues" in content
+    assert "Something real." in content
+
+
+def test_append_finding_creates_file_if_missing(tmp_path):
+    findings = tmp_path / "netropy-ui-findings.md"
+    append_finding(findings, "tests/a.py::test_a", "A finding.", None, None)
+    assert findings.exists()
+    assert "A finding." in findings.read_text()

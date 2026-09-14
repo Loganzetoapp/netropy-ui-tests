@@ -51,6 +51,19 @@ login would let anyone who can reach the machine do that. The one-test-at-a-
 time rule is enforced server-side regardless of how many people are looking
 at it, same as running it solo.
 
+## Automatic failure review
+
+Set `ANTHROPIC_API_KEY` in `.env` and every dashboard-triggered test
+failure gets automatically reviewed: the failure screenshot and a summary
+extracted from its Playwright trace (action sequence, JS/console errors,
+any non-2xx network responses) are sent to Claude, and the resulting
+evidence-grounded finding is appended to `netropy-ui-findings.md` under
+"Dashboard failure reviews" — timestamped, with links back to the
+screenshot/trace. These are single-run automated reads, kept in their own
+section rather than mixed into the manually-reproduced "Confirmed product
+issues" section above it. Leave `ANTHROPIC_API_KEY` unset to disable —
+this costs a real API call per failed run.
+
 ## Design
 
 See `DESIGN.md` for the color/type/component tokens this UI is built
