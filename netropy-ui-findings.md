@@ -33,6 +33,14 @@ invalid MAC (`zz:zz:zz:zz:zz:zz`) are all accepted verbatim, with no error
 and no clearing on blur.
 — `tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py`
 
+Extends to cross-field consistency too, not just per-field malformed
+values: a testbed with mismatched source/destination subnet masks (`/25`
+on one side, `/28` on the other, same conversation) was accepted with no
+warning at all and ran successfully — traffic flowed correctly (non-zero
+Tx/Rx on both sides, PASS reported), so this is a pure validation gap, not
+something that breaks the traffic path.
+— `tests/t10_t12_lifecycle/test_t10_asymmetric_subnet_pairing.py`
+
 ### Declared numeric bounds aren't enforced — on most fields
 Wizard step 1's Line Rate has no declared maximum at all, so a value far
 above a port's real 10 Gbps ceiling is accepted with no clamp. Stream Frame
@@ -76,7 +84,13 @@ Two things worth fixing on the product side:
    silently stuck on "Apply" forever — no toast, no error text, no retry.
    The only way to see it's failed at all is to watch network traffic
    directly. This UX gap is the reason the real cause took this long to
-   isolate.
+   isolate. A third trigger for the same silent-failure pattern, confirmed
+   2026-09-15: attempting to activate a testbed that reuses a port already
+   claimed by another *active* testbed. The wizard's own Ports step
+   correctly labels the port `⚠ in use by testbed X`, but doesn't disable
+   the toggle or block Apply — Apply just quietly fails to activate, with
+   no visible error, and the still-running testbed is left unharmed. See
+   `tests/t10_t12_lifecycle/test_t10_port_conflict_while_active.py`.
 
 Status: **root cause confirmed and fixed test-side** (every test that
 activates a testbed now asserts its name is ≤15 characters before trying —
@@ -98,7 +112,56 @@ existing UDP/TCP/ICMP siblings have been reliable). Kept in the suite as
 `xfail(strict=False)` — it documents the bug without blocking the suite
 either way, and would surface as an unexpected pass (not silently) if it
 stops reproducing.
-Status: intermittent, unresolved.
+Status: intermittent, unresolved. Update (2026-09-15): reproduced again in
+a testbed mixing three streams together — ARP, DNS, and VXLAN — not a
+VXLAN-only testbed. Same self-contradictory `"traffic-running": true` /
+`"datapath-state": "IDLE"` pattern. Confirms the bug isn't specific to a
+VXLAN-alone config; everything else about the cross-layer mix (adding all
+three stream types, Apply/Activate) worked cleanly.
+— `tests/t10_t12_lifecycle/test_t10_cross_layer_multistream_arp_dns_vxlan.py`
+
+### Restarting Start after Stop can silently end a run in a few seconds
+Stopping a live run, then clicking Start again on the same still-Applied
+testbed (without Deactivating first), can produce a "run" that silently
+self-terminates after roughly 2–4 seconds instead of running its configured
+duration — no error, no toast, nothing visibly wrong. The dashboard tile
+behaves as if a normal run completed. Found while cycling one testbed
+through Start → Stop → Start twice in a row: the first Start/Stop cycle
+behaved exactly like every other lifecycle test in this suite; the restart
+immediately after is where it broke.
+
+Distinguishable from the 15-char-name 502 bug above: no 502, activation
+itself already succeeded once, the name was well under the limit, and
+nothing here involves re-activating — only Start/Stop after a single Apply.
+
+Status: **reproduced twice** (once in the actual test run, once in a
+follow-up instrumented diagnostic polling tile state every 0.5–2s), but a
+third confirmation attempt was blocked by this environment's own repeated-
+hardware-action safeguard before it could run. Treat as a strong lead, not
+yet a fully confirmed issue — worth a deliberate repro from Travis or Logan
+before this graduates further.
+— `tests/t10_t12_lifecycle/test_t10_rapid_stop_restart_cycle.py`
+
+### Start double-click can leave a completed run's Stats view stuck on "never started"
+Rapidly double-clicking Start (a single `click_count=2` gesture, not two
+separate slow clicks) was handled correctly at the network level — exactly
+one `POST .../start` call fired, no duplicate submission — and the run
+completed its full configured duration normally (Stop stayed visible for
+the whole ramp). But afterward, clicking the dashboard tile's "Stats"
+button — the same action every sibling lifecycle test in this suite uses
+successfully right after a completed run — showed the "Ready to start
+traffic / Ports are armed and idle" empty placeholder instead of the
+completed run's result. The run-history table never appeared.
+
+Working hypothesis, not confirmed: the second click event landed on the
+Statistics view's own "Start traffic" button microseconds after the SPA
+navigated into it, planting a stale "about to start" expectation in
+frontend state that outlived the real, successfully-completed run.
+
+Status: single observation only (this environment's stateful-action policy
+allows one genuine run per exploratory test) — flagging as a real anomaly
+worth a deliberate repro, not yet confirmed root cause.
+— `tests/t10_t12_lifecycle/test_t10_double_click_start_race.py`
 
 ### Port links drop to "No Link" after activation — recurring, 4 incidents
 Ports have gone `Down / 0M / No Link` after activation on four separate
@@ -277,7 +340,7 @@ generate real traffic.
 | T7 · Wizard: Streams | Add/delete/clone, frame size, port distribution, layer editor | free |
 | T8 · Wizard: Traffic/Load | Stream-mix rebalancing, ramp math, TX burst/bandwidth cap | free |
 | T9 · Network Profiles | Save from wizard, select-to-populate, export/import | free |
-| T10 · Activation lifecycle | Live badges, dashboard active count, two simultaneous testbeds, default addressing, stop-mid-run, overload fail-path, 7 protocols (UDP/TCP/ICMP/multi-stream/DNS/NTP/ARP + VXLAN xfail) | stateful |
+| T10 · Activation lifecycle | Live badges, dashboard active count, two simultaneous testbeds, default addressing, stop-mid-run, overload fail-path, 7 protocols (UDP/TCP/ICMP/multi-stream/DNS/NTP/ARP + VXLAN xfail), port-conflict-while-active, cross-layer 3-protocol multistream, asymmetric subnet pairing, rapid stop/restart cycling, Start double-click race | stateful |
 | T11 · Live statistics | Metric tabs, scope/signal filters, unit toggle, zoom | stateful |
 | T12 · Reports & exports | Run history, all 5 export formats, delete run, Reports badge | stateful |
 | T13 · Connectivity diagnostics | DHCP Pre-Acq not-supported state (rest deferred, product WIP) | free |
@@ -303,3 +366,58 @@ Every test in the suite has independently passed 3 consecutive clean runs in
 isolation before being committed. This was the first time all 85 ran
 together in one pass — worth knowing that "green file-by-file" and "green
 end-to-end" aren't automatically the same guarantee on this box.
+
+## Dashboard failures — pending review
+
+Logged automatically when a test fails through the dashboard — each entry is one run's raw evidence, not yet reviewed. Ask Claude to review the pending entries in a session: it reads the trace/screenshot and either promotes a real one to "Confirmed product issues" above, or notes why it isn't (test/selector issue, inconclusive, etc.), then marks the entry reviewed.
+
+### 2026-09-15 00:04 UTC — tests/t10_t12_lifecycle/test_t10_default_addressing_activation.py::test_t10_default_addressing_activation
+
+**Status:** pending review
+
+Failure message: failed on setup with "playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "http://192.168.173.111:8080/", waiting until "load""
+
+Trace summary:
+```
+(no trace captured)
+```
+
+### 2026-09-15 02:36 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_tcp_2gbps_512b.py::test_t10_t12_lifecycle_tcp_2gbps_512b
+
+**Status:** pending review
+
+Failure message: failed on setup with "playwright._impl._errors.Error: Page.goto: net::ERR_ABORTED; maybe frame was detached?
+Call log:
+  - navigating to "http://192.168.173.111:8080/", waiting until "load""
+
+Trace summary:
+```
+(no trace captured)
+```
+
+### 2026-09-15 19:19 UTC — tests/t13_connectivity_diagnostics/test_t13_dhcp_pre_acq_not_supported.py::test_t13_dhcp_pre_acq_renders_not_supported
+
+**Status:** pending review
+
+Failure message: failed on setup with "AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: Netropy Traffic Generator | Sign in Username
+- textbox "username": test
+- text: Password
+- textbox "password": test
+- text: Controller unreachable — is the backend running?
+- button "Sign in"
+- text: Controller online — unit local reachable Powered by
+- link "Apposite Technologies":
+  - /url: https://www.apposite-tech.com
+- text: © 2026
+Error: element(s) not found 
+Call log:
+ 
+
+Trace summary:
+```
+(no trace captured)
+```
