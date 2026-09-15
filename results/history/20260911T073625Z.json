@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T073625Z",
+  "timestamp": "2026-09-11T07:36:25Z",
+  "git_sha": "74a6e49",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "duration": 7.709,
+  "tests": [
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_loads.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 7.697,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "679a6608-9262-4375-b32d-003048ad33e3",
+  "run_code": "RUN-25"
+}

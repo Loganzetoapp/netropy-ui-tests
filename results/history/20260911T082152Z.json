@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T082152Z",
+  "timestamp": "2026-09-11T08:21:52Z",
+  "git_sha": "98bb8cf",
+  "git_branch": "main",
+  "markers": "stateful",
+  "duration": 110.905,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_t12_lifecycle_vxlan_4gbps_1500b.py::test_t10_t12_lifecycle_vxlan_4gbps_1500b[chromium]",
+      "outcome": "skip",
+      "duration": 110.867,
+      "failure_message": "Confirmed INTERMITTENT 2026-09-10, not deterministic: 2 of 3 attempts this session had activation succeed (Deactivate button appears, testbed goes active) but Start never actually begin the run \u2014 Statistics landed on 'Ready to start traffic / Ports are armed and idle' with its own separate Start button, instead of a live/finished run. A network-logged diagnostic isolated one such failure to the backend: POST .../start?wait=15 returned 200 with a self-contradictory body \u2014 \"traffic-running\": true ",
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "95376499-18d9-47a0-8fe6-e63ff4d51d0e",
+  "run_code": "RUN-33"
+}

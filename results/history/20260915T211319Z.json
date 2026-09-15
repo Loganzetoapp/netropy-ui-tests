@@ -1,0 +1,19 @@
+{
+  "run_id": "20260915T211319Z",
+  "run_code": "RUN-57",
+  "timestamp": "2026-09-15T21:13:19Z",
+  "git_sha": "edaad52",
+  "git_branch": "main",
+  "markers": "stateful",
+  "duration": 109.239,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_rapid_stop_restart_cycle.py::test_t10_rapid_stop_restart_cycle[chromium]",
+      "outcome": "fail",
+      "duration": 109.094,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T10-RapidCycle\").get_by_role(\"button\", name=\"Stop\")",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-rapid-stop-restart-cycle-py-test-t10-rapid-stop-restart-cycle-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

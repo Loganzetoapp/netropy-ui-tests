@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T080042Z",
+  "timestamp": "2026-09-11T08:00:42Z",
+  "git_sha": "98bb8cf",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "duration": 9.12,
+  "tests": [
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_testbed.py::test_t4_create_testbed_adds_card_and_increments_counter[chromium]",
+      "outcome": "pass",
+      "duration": 9.105,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "c01006ad-5a18-41c6-9626-aaf39c8ec988",
+  "run_code": "RUN-31"
+}

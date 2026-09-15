@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T075412Z",
+  "timestamp": "2026-09-11T07:54:12Z",
+  "git_sha": "98bb8cf",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "duration": 2.821,
+  "tests": [
+    {
+      "nodeid": "tests/t1_auth/test_t1_logout.py::test_t1_logout_returns_to_login_and_kills_session[chromium]",
+      "outcome": "pass",
+      "duration": 2.805,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "4f92d611-16c3-4145-9e88-aecd216f1dbe",
+  "run_code": "RUN-29"
+}

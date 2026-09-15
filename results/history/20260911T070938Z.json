@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T070938Z",
+  "timestamp": "2026-09-11T07:09:38Z",
+  "git_sha": "03deeab",
+  "git_branch": "feature/test-runner-webapp",
+  "markers": "hardware_free",
+  "duration": 2.016,
+  "tests": [
+    {
+      "nodeid": "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login_lands_on_dashboard[chromium]",
+      "outcome": "pass",
+      "duration": 2.002,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "278e37a0-c954-43d6-a947-192543fe6be2",
+  "run_code": "RUN-22"
+}

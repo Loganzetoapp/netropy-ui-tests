@@ -1,0 +1,579 @@
+{
+  "run_id": "20260911T072005Z",
+  "timestamp": "2026-09-11T07:20:05Z",
+  "git_sha": "74a6e49",
+  "git_branch": "feature/test-runner-webapp",
+  "markers": "hardware_free",
+  "duration": 253.586,
+  "tests": [
+    {
+      "nodeid": "tests/t13_connectivity_diagnostics/test_t13_dhcp_pre_acq_not_supported.py::test_t13_dhcp_pre_acq_renders_not_supported[chromium]",
+      "outcome": "pass",
+      "duration": 8.43,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_valid_login_lands_on_dashboard[chromium]",
+      "outcome": "pass",
+      "duration": 1.759,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_invalid_password_shows_error_no_session[chromium]",
+      "outcome": "pass",
+      "duration": 2.599,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_logout_returns_to_login_and_kills_session[chromium]",
+      "outcome": "pass",
+      "duration": 1.847,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_two_concurrent_sessions_both_work[chromium]",
+      "outcome": "pass",
+      "duration": 3.299,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_concurrent_sessions.py::test_t1_two_concurrent_sessions_both_work[chromium]",
+      "outcome": "pass",
+      "duration": 2.846,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_invalid_password.py::test_t1_invalid_password_shows_error_no_session[chromium]",
+      "outcome": "pass",
+      "duration": 3.014,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_logout.py::test_t1_logout_returns_to_login_and_kills_session[chromium]",
+      "outcome": "pass",
+      "duration": 1.622,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login_lands_on_dashboard[chromium]",
+      "outcome": "pass",
+      "duration": 1.553,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 1.525,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_port_table_has_8_rows[chromium]",
+      "outcome": "pass",
+      "duration": 1.441,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_licenses_section_shows_gating[chromium]",
+      "outcome": "pass",
+      "duration": 1.653,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_loads.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 1.52,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_licenses_section_shows_gating.py::test_t2_licenses_section_shows_gating[chromium]",
+      "outcome": "pass",
+      "duration": 1.533,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_port_table_has_8_rows.py::test_t2_port_table_has_8_rows[chromium]",
+      "outcome": "pass",
+      "duration": 1.429,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_testbed.py::test_t4_create_testbed_adds_card_and_increments_counter[chromium]",
+      "outcome": "pass",
+      "duration": 2.697,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_empty_name_disables_create_draft[chromium]",
+      "outcome": "pass",
+      "duration": 1.554,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_duplicate_name_shows_inline_error[chromium]",
+      "outcome": "pass",
+      "duration": 2.863,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_delete_testbed.py::test_t4_delete_from_card_removes_tile[chromium]",
+      "outcome": "pass",
+      "duration": 2.844,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_delete_testbed.py::test_t4_delete_from_inside_edit_removes_tile[chromium]",
+      "outcome": "pass",
+      "duration": 4.34,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_duplicate_testbed.py::test_t4_duplicate_testbed_creates_card_with_distinct_uid[chromium]",
+      "outcome": "pass",
+      "duration": 4.124,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_export_import_roundtrip.py::test_t4_export_then_import_recreates_equivalent_testbed[chromium]",
+      "outcome": "fail",
+      "duration": 3.747,
+      "failure_message": "AssertionError: assert {'feature': '...eam': [], ...} == {'feature': '...eam': [], ...}\n  \n  Omitting 4 identical items, use -vv to show\n  Differing items:\n  {'uid': '1497543a432c4405836bc42d016b1464'} != {'uid': '50ddd98cc04b4c00a774106bb39b8a01'}\n  Use -v to get more diff",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-export-import-roundtrip-py-test-t4-export-then-import-recreates-equivalent-testbed-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_import_malformed_file.py::test_t4_import_malformed_json_shows_error_no_broken_card[chromium]",
+      "outcome": "pass",
+      "duration": 1.496,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_unit_conversion.py::test_t5_line_rate_unit_dropdown_converts_value[chromium]",
+      "outcome": "pass",
+      "duration": 3.081,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_zero_clears_on_blur[chromium]",
+      "outcome": "pass",
+      "duration": 3.671,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_negative_clears_on_blur[chromium]",
+      "outcome": "pass",
+      "duration": 3.112,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_no_client_side_upper_bound[chromium]",
+      "outcome": "pass",
+      "duration": 3.389,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_rejects_non_numeric_keystrokes[chromium]",
+      "outcome": "pass",
+      "duration": 3.642,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_network_profile_dropdown.py::test_t5_network_profile_dropdown_default_state[chromium]",
+      "outcome": "pass",
+      "duration": 3.235,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_next_disabled_on_invalid_config.py::test_t5_next_disabled_when_bidirectional_peer_is_none[chromium]",
+      "outcome": "pass",
+      "duration": 3.211,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_peer_port_excludes_self.py::test_t5_peer_port_options_exclude_self[chromium]",
+      "outcome": "pass",
+      "duration": 3.122,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_roster_topology_view_toggle.py::test_t5_roster_and_topology_views_both_render[chromium]",
+      "outcome": "pass",
+      "duration": 3.707,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_toggle_off_on_retains_config.py::test_t5_toggle_off_then_on_retains_rate_and_direction[chromium]",
+      "outcome": "pass",
+      "duration": 3.345,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_use_toggle_controls.py::test_t5_use_toggle_enables_and_disables_row_controls[chromium]",
+      "outcome": "pass",
+      "duration": 3.807,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_cards_table_view_sync.py::test_t6_ip_edited_in_cards_view_appears_in_table_view[chromium]",
+      "outcome": "pass",
+      "duration": 3.461,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_dst_autofill_button.py::test_t6_dst_ip_autofill_is_manual_not_live[chromium]",
+      "outcome": "pass",
+      "duration": 3.776,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_dst_autofill_button.py::test_t6_dst_mac_autofill_is_manual_not_live[chromium]",
+      "outcome": "pass",
+      "duration": 3.902,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_encap_dropdown.py::test_t6_encap_dropdown_options_render[chromium]",
+      "outcome": "pass",
+      "duration": 4.125,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_gateway_destmac_toggle.py::test_t6_gateway_destmac_toggle_preserves_each_value[chromium]",
+      "outcome": "pass",
+      "duration": 3.55,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_default_32_is_one_host[chromium]",
+      "outcome": "pass",
+      "duration": 3.258,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_31_is_two_hosts[chromium]",
+      "outcome": "pass",
+      "duration": 3.719,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_25_is_126_hosts[chromium]",
+      "outcome": "pass",
+      "duration": 3.361,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_malformed_source_ip_accepted_without_error[chromium]",
+      "outcome": "pass",
+      "duration": 3.748,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_out_of_range_octet_accepted_without_error[chromium]",
+      "outcome": "pass",
+      "duration": 3.705,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_bad_mac_format_accepted_without_error[chromium]",
+      "outcome": "pass",
+      "duration": 3.748,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_ip_inc_range.py::test_t6_ip_inc_disabled_at_one_host_enabled_above[chromium]",
+      "outcome": "pass",
+      "duration": 3.663,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_ip_inc_range.py::test_t6_ip_inc_changes_range_end_not_host_count[chromium]",
+      "outcome": "pass",
+      "duration": 3.207,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_add_stream_names.py::test_t7_add_stream_names_auto_increment[chromium]",
+      "outcome": "pass",
+      "duration": 3.932,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_delete_streams_to_zero.py::test_t7_deleting_all_streams_disables_apply[chromium]",
+      "outcome": "pass",
+      "duration": 3.647,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_distribute_across_ports.py::test_t7_distribute_across_ports_alternate_vs_sequence[chromium]",
+      "outcome": "pass",
+      "duration": 3.586,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_duplicate_stream.py::test_t7_clone_stream_creates_distinct_named_copy[chromium]",
+      "outcome": "pass",
+      "duration": 3.601,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_apply_to_all.py::test_t7_frame_size_apply_to_all_then_per_row_edit_sticks[chromium]",
+      "outcome": "pass",
+      "duration": 4.04,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_bounds.py::test_t7_frame_size_below_64_accepted_without_clamping[chromium]",
+      "outcome": "pass",
+      "duration": 3.36,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_bounds.py::test_t7_frame_size_above_9216_accepted_without_clamping[chromium]",
+      "outcome": "pass",
+      "duration": 3.513,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_bounds.py::test_t7_frame_size_rejects_non_numeric_keystrokes[chromium]",
+      "outcome": "pass",
+      "duration": 2.956,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_layer_chip_opens_editor.py::test_t7_ethernet_chip_opens_editor_on_ethernet_tab[chromium]",
+      "outcome": "pass",
+      "duration": 3.637,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_stream_state_toggle.py::test_t7_stream_disabled_state_persists_across_navigation[chromium]",
+      "outcome": "pass",
+      "duration": 3.576,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_edit_all_vs_inline_pencil.py::test_t8_inline_pencil_click_becomes_editable[chromium]",
+      "outcome": "pass",
+      "duration": 3.712,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_edit_all_vs_inline_pencil.py::test_t8_edit_all_opens_stream_bandwidth_modal[chromium]",
+      "outcome": "pass",
+      "duration": 4.223,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_per_port_selector.py::test_t8_per_port_selector_shows_that_ports_own_mix[chromium]",
+      "outcome": "pass",
+      "duration": 3.66,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_disabled_by_default[chromium]",
+      "outcome": "pass",
+      "duration": 4.083,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_math_updates_total_run_time[chromium]",
+      "outcome": "pass",
+      "duration": 4.439,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_stream_mix_over_100_warns.py::test_t8_pinning_over_100_percent_warns_not_blocks[chromium]",
+      "outcome": "pass",
+      "duration": 3.767,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_stream_mix_rebalances.py::test_t8_stream_mix_splits_evenly_on_add[chromium]",
+      "outcome": "pass",
+      "duration": 3.629,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_stream_mix_rebalances.py::test_t8_editing_one_share_rebalances_the_other[chromium]",
+      "outcome": "pass",
+      "duration": 3.512,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_tx_burst_bandwidth_cap.py::test_t8_tx_burst_clamps_to_declared_max[chromium]",
+      "outcome": "pass",
+      "duration": 4.035,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_tx_burst_bandwidth_cap.py::test_t8_bandwidth_cap_not_yet_configurable[chromium]",
+      "outcome": "pass",
+      "duration": 4.486,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_unit_toggle_conversion.py::test_t8_unit_toggle_converts_share_value[chromium]",
+      "outcome": "pass",
+      "duration": 3.898,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t9_network_profiles/test_t9_export_import_roundtrip.py::test_t9_export_then_import_recreates_profile[chromium]",
+      "outcome": "pass",
+      "duration": 10.455,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t9_network_profiles/test_t9_save_profile_from_wizard.py::test_t9_save_profile_from_wizard_appears_everywhere[chromium]",
+      "outcome": "pass",
+      "duration": 9.106,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t9_network_profiles/test_t9_select_profile_populates_fields.py::test_t9_selecting_profile_populates_ports[chromium]",
+      "outcome": "pass",
+      "duration": 10.336,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "run_code": "RUN-23"
+}

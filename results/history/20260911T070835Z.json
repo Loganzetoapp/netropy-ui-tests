@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T070835Z",
+  "timestamp": "2026-09-11T07:08:35Z",
+  "git_sha": "70c9d0f",
+  "git_branch": "feature/test-runner-webapp",
+  "markers": "hardware_free",
+  "duration": 16.494,
+  "tests": [
+    {
+      "nodeid": "tests/t1_auth/test_zz_webapp_verification_temp.py::test_zz_webapp_verification_temp_deliberate_failure[chromium]",
+      "outcome": "fail",
+      "duration": 16.466,
+      "failure_message": "AssertionError: Locator expected to be visible\nActual value: - img \"Apposite Technologies\"\n- text: \"Netropy Traffic Generator online Unit \\\"local\\\" \u2014 the traffic-generator unit this UI controls. Online: responding to health checks.\"\n- img\n- text: \"Sep 11, 2026 00:08:41 UTC Unit clock NTP server: not configured (sandbox) Sep 11, 2026 00:08:41 UTC\"\n- button \"Account\": TU test User\n- button \"Menu\":\n  - img\n- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU\n- img: 1%\n- text: 1 % 2",
+      "screenshot": "webapp-artifacts/38b7ff6e-cb0d-41a3-9705-1f50a94e1622/1/test-failed-1.png",
+      "trace": "webapp-artifacts/38b7ff6e-cb0d-41a3-9705-1f50a94e1622/1/trace.zip"
+    }
+  ],
+  "batch_id": "38b7ff6e-cb0d-41a3-9705-1f50a94e1622",
+  "run_code": "RUN-21"
+}

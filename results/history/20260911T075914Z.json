@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T075914Z",
+  "timestamp": "2026-09-11T07:59:14Z",
+  "git_sha": "98bb8cf",
+  "git_branch": "main",
+  "markers": "stateful",
+  "duration": 185.213,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_two_testbeds_simultaneous.py::test_t10_two_testbeds_run_simultaneously[chromium]",
+      "outcome": "pass",
+      "duration": 185.2,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "d4a62afe-0ae5-4e30-95a5-47e25bfad36d",
+  "run_code": "RUN-30"
+}

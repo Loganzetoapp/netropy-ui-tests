@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T064827Z",
+  "timestamp": "2026-09-11T06:48:27Z",
+  "git_sha": "c870272",
+  "git_branch": "feature/test-runner-webapp",
+  "markers": "hardware_free",
+  "duration": 6.681,
+  "tests": [
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_loads.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 6.667,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "e9744c0f-7468-427f-a40f-fe6e2c85d1ff",
+  "run_code": "RUN-12"
+}

@@ -1,0 +1,20 @@
+{
+  "run_id": "20260911T080107Z",
+  "timestamp": "2026-09-11T08:01:07Z",
+  "git_sha": "98bb8cf",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "duration": 7.774,
+  "tests": [
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_duplicate_name_shows_inline_error[chromium]",
+      "outcome": "pass",
+      "duration": 7.76,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "e984374e-e88d-4feb-95af-c78eac55bdc3",
+  "run_code": "RUN-32"
+}
