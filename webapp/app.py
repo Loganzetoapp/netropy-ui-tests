@@ -197,17 +197,36 @@ def get_findings():
     return {"html": html}
 
 
+class NoCacheStaticFiles(StaticFiles):
+    """This app changes frequently during development — a browser that
+    caches app.js/styles.css/index.html from before an update can end up
+    with, e.g., a nav button that renders (from a freshly-fetched index.html)
+    but does nothing (from a stale cached app.js with no listener for it).
+    `no-cache` still lets the browser reuse a cached file, but only after
+    revalidating with the server (a cheap conditional request against the
+    ETag Starlette already sets) — so updates are always picked up on the
+    next load, no hard-refresh required, without giving up caching
+    entirely. Only applied to /static — /results (screenshots/traces) are
+    genuinely immutable once written, so those are fine to cache normally.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # The frontend (index.html, styles.css, app.js, icons, logo) is served
 # under /static — matching the paths /api/modules returns and the ones
 # index.html itself uses. "/" serves index.html directly so the app
 # still opens at the root URL.
 app.mount("/results", StaticFiles(directory=str(REPO_ROOT / "results")), name="results")
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/")
 def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 # --- Sharing this dashboard beyond localhost -------------------------------
