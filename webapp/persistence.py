@@ -107,12 +107,18 @@ def list_batches(history_dir: Path = HISTORY_DIR) -> list[BatchResult]:
 
 def list_test_runs(history_dir: Path = HISTORY_DIR) -> list[dict]:
     """Flatten every history file into one row per (history file, test)
-    pair: `run_code`, `run_id`, `timestamp`, `nodeid`, `outcome`. Unlike
-    `list_batches()`, this includes every history file — plain CLI runs
-    with no `batch_id` too — since sibling-run/flaky-signal/area-rollup
-    logic needs the full picture, not just webapp-triggered ones. Sorted
-    newest-first by timestamp. This is the raw per-test-run view later
-    endpoints (run-detail siblings, the overview rollup) fold over."""
+    pair: `run_code`, `run_id`, `timestamp`, `nodeid`, `outcome`,
+    `failure_message`. Unlike `list_batches()`, this includes every
+    history file — plain CLI runs with no `batch_id` too — since
+    sibling-run/flaky-signal/area-rollup logic needs the full picture,
+    not just webapp-triggered ones. Sorted newest-first by timestamp.
+    This is the raw per-test-run view later endpoints (run-detail
+    siblings, the overview rollup, the area-detail known-issue
+    cross-reference) fold over. `failure_message` is included alongside
+    the original four fields so a caller can run `known_issues.
+    match_failure()` against these rows directly without re-reading the
+    history file per row — harmless for callers that only used the
+    original fields."""
     rows = []
     for run in _load_history(history_dir):
         for test in run.get("tests", []):
@@ -123,6 +129,7 @@ def list_test_runs(history_dir: Path = HISTORY_DIR) -> list[dict]:
                     "timestamp": run.get("timestamp", ""),
                     "nodeid": test.get("nodeid"),
                     "outcome": test.get("outcome"),
+                    "failure_message": test.get("failure_message"),
                 }
             )
     rows.sort(key=lambda r: r["timestamp"], reverse=True)

@@ -449,9 +449,37 @@ async function renderOverview(panel) {
   try {
     const { areas } = await fetchJSON("/api/overview");
     panel.innerHTML = `<div class="overview-grid">${areas.map(renderAreaCard).join("")}</div>`;
+    attachAreaCardHandlers(panel);
   } catch (err) {
     panel.innerHTML = `<p class="test-desc">Couldn't load overview: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+// The area card's own click-through target is #area/<id> — but the card
+// also contains a real nested link (the "Last run" RUN-xx code). HTML
+// doesn't allow an <a> inside another <a> (the browser would silently
+// close the outer one, breaking the whole card's layout), so the card is
+// a plain div with a delegated click handler instead: clicks on the
+// nested run link behave normally (and are left alone here), everything
+// else on the card navigates to the area page. role="link" + tabindex
+// gives it the same keyboard/AT affordances a real link would have.
+function attachAreaCardHandlers(panel) {
+  panel.querySelectorAll(".area-card").forEach((card) => {
+    const go = () => {
+      location.hash = `area/${encodeURIComponent(card.dataset.areaId)}`;
+    };
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("a")) return; // let the nested run-code link navigate itself
+      go();
+    });
+    card.addEventListener("keydown", (e) => {
+      if (e.target !== card) return; // don't hijack Enter on the nested link
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        go();
+      }
+    });
+  });
 }
 
 function renderAreaCard(area) {
@@ -477,13 +505,20 @@ function renderAreaCard(area) {
   const issueHtml =
     area.confirmed_issue_count > 0
       ? `<div class="area-card-row">
-           <button type="button" class="pill pill-warn" data-jump="findings">
+           <span class="pill pill-warn">
              ${area.confirmed_issue_count} confirmed issue${area.confirmed_issue_count === 1 ? "" : "s"}
-           </button>
+           </span>
          </div>`
       : "";
+  // The card itself is the click-through into #area/<id> (its whole
+  // surface, not just a sub-element) — everything already on it
+  // (pass-rate, last run, flaky tests, issue count) is exactly the
+  // entry-point summary the area-detail page then expands on. Can't be a
+  // real <a> — it contains a nested "Last run" link, and HTML forbids
+  // nesting anchors (see attachAreaCardHandlers above) — so it's a div
+  // with role="link" plus a delegated click/keydown handler instead.
   return `
-    <div class="card area-card">
+    <div class="card area-card" data-area-id="${escapeAttr(area.id)}" role="link" tabindex="0">
       <div class="area-card-header">
         <h3>${escapeHtml(area.label)}</h3>
         ${passRatePill}
@@ -494,10 +529,10 @@ function renderAreaCard(area) {
     </div>`;
 }
 
-// Clicking a confirmed-issue badge (Overview) or the "possible known
-// issues" callout's findings link (run-detail) both just want to land on
-// the Findings tab — no in-page scrolling. One delegated listener covers
-// both regardless of how many times those panels get re-rendered.
+// Clicking the "possible known issues" callout's findings link
+// (run-detail) wants to land on the Findings tab — no in-page scrolling.
+// One delegated listener covers it regardless of how many times that
+// panel gets re-rendered.
 document.addEventListener("click", (e) => {
   const btn = e.target.closest('[data-jump="findings"]');
   if (btn) {
@@ -505,6 +540,134 @@ document.addEventListener("click", (e) => {
     showPage("findings");
   }
 });
+
+// --- Area-detail page ---------------------------------------------------------
+
+function renderAreaTestRow(test) {
+  const outcomeHtml = test.last_run
+    ? `<span class="pill ${outcomePillClass(test.last_run.outcome)}">${escapeHtml(test.last_run.outcome)}</span>`
+    : `<span class="pill muted-cell">No runs</span>`;
+  const passRatePct = test.pass_rate == null ? null : Math.round(test.pass_rate * 100);
+  const passRateHtml =
+    passRatePct == null ? "" : `<span class="test-desc">${passRatePct}% of ${test.total_runs}</span>`;
+  const linkHtml = test.last_run && test.last_run.run_code
+    ? `<a href="#run/${encodeURIComponent(test.last_run.run_code)}">${escapeHtml(test.last_run.run_code)}</a>`
+    : `<span class="muted-cell">${test.last_run ? "unlinked run" : "never run"}</span>`;
+  return `
+    <div class="run-detail-test area-test-row">
+      <div class="run-detail-test-top">
+        <div>
+          <div class="test-name">${escapeHtml(test.name)}</div>
+          <div class="test-desc">${escapeHtml(test.file)}</div>
+        </div>
+        <div class="run-detail-test-actions">
+          ${safetyPill(test.safety_marker)}
+          ${outcomeHtml}
+          ${passRateHtml}
+          ${linkHtml}
+        </div>
+      </div>
+    </div>`;
+}
+
+function renderAreaKnownIssue(issue) {
+  const connected = issue.connected_tests || [];
+  const connectedHtml = connected.length
+    ? `<ul class="area-issue-connected-list">
+        ${connected
+          .map((c) => {
+            const nameHtml = escapeHtml(c.nodeid.split("::").pop());
+            const runHtml = c.run_code
+              ? `<a href="#run/${encodeURIComponent(c.run_code)}">${escapeHtml(c.run_code)}</a>`
+              : `<span class="muted-cell">unlinked run</span>`;
+            return `<li>
+              <span class="pill ${outcomePillClass(c.outcome)}">${escapeHtml(c.outcome)}</span>
+              ${nameHtml} — ${runHtml}
+              <span class="test-desc">${formatTimestamp(c.timestamp)}</span>
+            </li>`;
+          })
+          .join("")}
+      </ul>`
+    : `<p class="test-desc">No test run in this area has failed with a matching signature yet.</p>`;
+  return `
+    <div class="card area-issue-card">
+      <div class="known-issue-callout-title">${escapeHtml(issue.title)}</div>
+      <p class="test-desc">${escapeHtml(issue.body)}</p>
+      <div class="area-issue-connected-title">Connected test runs</div>
+      ${connectedHtml}
+      <button type="button" class="link-button" data-jump="findings">See in Findings →</button>
+    </div>`;
+}
+
+function renderAreaDetailContent(area) {
+  const passRatePct = area.pass_rate == null ? null : Math.round(area.pass_rate * 100);
+  const passRatePill =
+    passRatePct == null
+      ? `<span class="pill muted-cell">No runs</span>`
+      : `<span class="pill ${passRatePct === 100 ? "pill-ok" : passRatePct < 70 ? "pill-bad" : "pill-warn"}">${passRatePct}%</span>`;
+  const lastRunHtml = area.last_run
+    ? `${
+        area.last_run.run_code
+          ? `<a href="#run/${encodeURIComponent(area.last_run.run_code)}">${escapeHtml(area.last_run.run_code)}</a>`
+          : `<span class="muted-cell">unlinked run</span>`
+      } <span class="muted-cell">· ${formatTimestamp(area.last_run.timestamp)}</span>`
+    : `<span class="muted-cell">No runs yet</span>`;
+
+  const issuesHtml = area.known_issues.length
+    ? area.known_issues.map(renderAreaKnownIssue).join("")
+    : `<p class="test-desc">No confirmed product issues recorded for this area.</p>`;
+
+  const testsHtml = area.tests.length
+    ? area.tests.map(renderAreaTestRow).join("")
+    : `<p class="test-desc">No tests found in this area's catalog.</p>`;
+
+  return `
+    <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
+    <div class="card run-header">
+      <div class="run-header-top">
+        <h2>${escapeHtml(area.label)}</h2>
+        ${passRatePill}
+      </div>
+      <dl class="run-meta">
+        <div><dt>Last run</dt><dd>${lastRunHtml}</dd></div>
+        <div><dt>Confirmed issues</dt><dd>${area.confirmed_issue_count}</dd></div>
+        <div><dt>Flaky tests</dt><dd>${area.flaky_tests.length}</dd></div>
+        <div><dt>Tests in area</dt><dd>${area.tests.length}</dd></div>
+      </dl>
+    </div>
+    <h3 class="run-detail-section-title">Confirmed known issues</h3>
+    ${issuesHtml}
+    <h3 class="run-detail-section-title">Tests in this area</h3>
+    <div class="run-detail-tests">${testsHtml}</div>
+  `;
+}
+
+async function renderAreaDetail(panel, areaId) {
+  panel.innerHTML = "<p>Loading area…</p>";
+  try {
+    const area = await fetchJSON(`/api/areas/${encodeURIComponent(areaId)}`);
+    panel.innerHTML = renderAreaDetailContent(area);
+  } catch (err) {
+    // Covers the backend's 404 ("Unknown area: ...") and any other fetch
+    // failure alike — same not-found-with-a-way-back pattern as
+    // renderRunDetail's catch block.
+    panel.innerHTML = `
+      <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
+      <div class="card run-not-found">
+        <h2>Area not found</h2>
+        <p class="test-desc">${escapeHtml(err.message)}</p>
+      </div>`;
+  }
+}
+
+function showAreaDetailPage(areaId) {
+  document.getElementById("nav-overview").classList.remove("active");
+  document.getElementById("nav-tests").classList.remove("active");
+  document.getElementById("nav-results").classList.remove("active");
+  document.getElementById("nav-findings").classList.remove("active");
+  document.getElementById("module-tabs").hidden = true;
+  renderAreaDetail(document.getElementById("module-panel"), areaId);
+}
 
 // --- Run-detail page ---------------------------------------------------------
 
@@ -530,7 +693,7 @@ function renderKnownIssueMatches(matches) {
 
 function renderRunDetailTestRow(test, run) {
   const areaLabel = test.area
-    ? `<a href="#overview">${escapeHtml(test.area.label)}</a>`
+    ? `<a href="#area/${encodeURIComponent(test.area.id)}">${escapeHtml(test.area.label)}</a>`
     : `<span class="muted-cell">Unmapped area</span>`;
   const failureBlock = test.failure_message
     ? `<pre class="run-detail-failure">${escapeHtml(test.failure_message)}</pre>`
@@ -663,6 +826,8 @@ function parseHash() {
   if (!hash) return null;
   const runMatch = hash.match(/^run\/(.+)$/);
   if (runMatch) return { page: "run", code: decodeURIComponent(runMatch[1]) };
+  const areaMatch = hash.match(/^area\/(.+)$/);
+  if (areaMatch) return { page: "area", id: decodeURIComponent(areaMatch[1]) };
   if (hash === "overview") return { page: "overview" };
   return null;
 }
@@ -674,6 +839,8 @@ function handleHashChange() {
     showPage("overview");
   } else if (route.page === "run") {
     showRunDetailPage(route.code);
+  } else if (route.page === "area") {
+    showAreaDetailPage(route.id);
   }
 }
 
@@ -754,6 +921,8 @@ function renderResultRow(batch) {
     showPage("overview");
   } else if (initialRoute && initialRoute.page === "run") {
     showRunDetailPage(initialRoute.code);
+  } else if (initialRoute && initialRoute.page === "area") {
+    showAreaDetailPage(initialRoute.id);
   } else {
     loadModules();
   }

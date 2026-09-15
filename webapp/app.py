@@ -375,56 +375,160 @@ def _rows_for_catalog_nodeid(
     return matched
 
 
-@app.get("/api/overview")
-def get_overview():
-    groups = discover_groups()
-    confirmed_issues = parse_confirmed_issues(FINDINGS_PATH)
+def _rows_by_nodeid() -> dict[str, list[dict]]:
+    """Every history row (see `list_test_runs`), grouped by the *recorded*
+    (possibly browser-parametrized) nodeid — the shared starting point
+    for both the overview rollup and the area-detail endpoint below."""
     rows_by_nodeid: dict[str, list[dict]] = defaultdict(list)
     for row in list_test_runs(HISTORY_DIR):
         if row["nodeid"]:
             rows_by_nodeid[row["nodeid"]].append(row)
+    return rows_by_nodeid
 
-    areas = []
-    for group in groups:
-        nodeids = group.run_all_nodeids
-        # rows_by_nodeid is keyed by the *recorded* (possibly
-        # browser-suffixed) nodeid; catalog nodeids never carry that
-        # suffix, so look each one up via _matches_catalog_nodeid rather
-        # than a direct dict hit (see runner.py's _find_test_result).
-        per_nid_rows = {nid: _rows_for_catalog_nodeid(nid, rows_by_nodeid) for nid in nodeids}
-        group_rows = [r for rows in per_nid_rows.values() for r in rows]
 
-        pass_rate = None
-        last_run = None
-        if group_rows:
-            pass_count = sum(1 for r in group_rows if r["outcome"] == "pass")
-            pass_rate = round(pass_count / len(group_rows), 4)
-            latest = max(group_rows, key=lambda r: r["timestamp"])
-            last_run = {
-                "run_code": latest["run_code"],
-                "timestamp": latest["timestamp"],
-                "outcome": latest["outcome"],
-            }
+def _compute_area_rollup(
+    group: TestGroup, rows_by_nodeid: dict[str, list[dict]], confirmed_issues: list[dict]
+) -> dict:
+    """The pass-rate/last-run/flaky-tests/confirmed-issue-count summary
+    for one catalog group — shared by `/api/overview` (one of these per
+    area) and `/api/areas/{area_id}` (the header of one area's own
+    detail page), so the two always agree with each other."""
+    nodeids = group.run_all_nodeids
+    # rows_by_nodeid is keyed by the *recorded* (possibly
+    # browser-suffixed) nodeid; catalog nodeids never carry that suffix,
+    # so look each one up via _matches_catalog_nodeid rather than a
+    # direct dict hit (see runner.py's _find_test_result).
+    per_nid_rows = {nid: _rows_for_catalog_nodeid(nid, rows_by_nodeid) for nid in nodeids}
+    group_rows = [r for rows in per_nid_rows.values() for r in rows]
 
-        flaky_tests = [nid for nid, rows in per_nid_rows.items() if _is_flaky(rows)]
+    pass_rate = None
+    last_run = None
+    if group_rows:
+        pass_count = sum(1 for r in group_rows if r["outcome"] == "pass")
+        pass_rate = round(pass_count / len(group_rows), 4)
+        latest = max(group_rows, key=lambda r: r["timestamp"])
+        last_run = {
+            "run_code": latest["run_code"],
+            "timestamp": latest["timestamp"],
+            "outcome": latest["outcome"],
+        }
 
-        area_tokens = _group_area_tokens(group.id)
-        confirmed_issue_count = sum(
-            1 for issue in confirmed_issues if issue.get("area") in area_tokens
+    flaky_tests = [nid for nid, rows in per_nid_rows.items() if _is_flaky(rows)]
+
+    area_tokens = _group_area_tokens(group.id)
+    confirmed_issue_count = sum(
+        1 for issue in confirmed_issues if issue.get("area") in area_tokens
+    )
+
+    return {
+        "id": group.id,
+        "label": group.label,
+        "pass_rate": pass_rate,
+        "last_run": last_run,
+        "flaky_tests": flaky_tests,
+        "confirmed_issue_count": confirmed_issue_count,
+    }
+
+
+@app.get("/api/overview")
+def get_overview():
+    groups = discover_groups()
+    confirmed_issues = parse_confirmed_issues(FINDINGS_PATH)
+    rows_by_nodeid = _rows_by_nodeid()
+    return {
+        "areas": [_compute_area_rollup(g, rows_by_nodeid, confirmed_issues) for g in groups]
+    }
+
+
+@app.get("/api/areas/{area_id}")
+def get_area_detail(area_id: str):
+    """The Overview area card's click-through target: this area's own
+    confirmed known issues (cross-referenced against which of this
+    area's tests actually failed/errored with a matching signature) plus
+    a full list of the area's tests, each with its latest run. Everything
+    here derives from the same two primitives `/api/overview` and
+    `/api/runs/{run_code}` already use — catalog.discover_groups() and
+    persistence.list_test_runs() — no new state, nothing cached."""
+    groups = discover_groups()
+    group = next((g for g in groups if g.id == area_id), None)
+    if group is None:
+        raise HTTPException(404, f"Unknown area: {area_id}")
+
+    confirmed_issues = parse_confirmed_issues(FINDINGS_PATH)
+    rows_by_nodeid = _rows_by_nodeid()
+    area = {"id": group.id, "label": group.label}
+    rollup = _compute_area_rollup(group, rows_by_nodeid, confirmed_issues)
+
+    # --- every test in this area, with its latest run/pass-rate --------
+    tests_out = []
+    rows_by_test_nodeid: dict[str, list[dict]] = {}
+    for f in group.files:
+        for t in f.tests:
+            rows = _rows_for_catalog_nodeid(t.nodeid, rows_by_nodeid)  # newest-first
+            rows_by_test_nodeid[t.nodeid] = rows
+
+            pass_rate = None
+            last_run = None
+            if rows:
+                pass_rate = round(sum(1 for r in rows if r["outcome"] == "pass") / len(rows), 4)
+                latest = rows[0]
+                last_run = {
+                    "run_code": latest["run_code"],
+                    "timestamp": latest["timestamp"],
+                    "outcome": latest["outcome"],
+                }
+
+            tests_out.append(
+                {
+                    "nodeid": t.nodeid,
+                    "name": t.name,
+                    "file": f.path,
+                    "safety_marker": t.safety_marker,
+                    "total_runs": len(rows),
+                    "pass_rate": pass_rate,
+                    "last_run": last_run,
+                }
+            )
+
+    # --- this area's confirmed issues, each with its connected tests ---
+    area_tokens = _group_area_tokens(group.id)
+    issues_out = []
+    for issue in confirmed_issues:
+        if issue.get("area") not in area_tokens:
+            continue
+        connected: list[dict] = []
+        for f in group.files:
+            for t in f.tests:
+                token = _known_issue_area_token(t.nodeid, area)
+                for row in rows_by_test_nodeid.get(t.nodeid, []):
+                    if row["outcome"] not in ("fail", "error"):
+                        continue
+                    matches = match_failure(
+                        t.nodeid, row.get("failure_message"), token, FINDINGS_PATH
+                    )
+                    if any(m["title"] == issue["title"] for m in matches):
+                        connected.append(
+                            {
+                                "nodeid": t.nodeid,
+                                "run_code": row["run_code"],
+                                "timestamp": row["timestamp"],
+                                "outcome": row["outcome"],
+                            }
+                        )
+        issues_out.append(
+            {"title": issue["title"], "body": issue["body"], "connected_tests": connected}
         )
 
-        areas.append(
-            {
-                "id": group.id,
-                "label": group.label,
-                "pass_rate": pass_rate,
-                "last_run": last_run,
-                "flaky_tests": flaky_tests,
-                "confirmed_issue_count": confirmed_issue_count,
-            }
-        )
-
-    return {"areas": areas}
+    return {
+        "id": rollup["id"],
+        "label": rollup["label"],
+        "pass_rate": rollup["pass_rate"],
+        "last_run": rollup["last_run"],
+        "flaky_tests": rollup["flaky_tests"],
+        "confirmed_issue_count": rollup["confirmed_issue_count"],
+        "known_issues": issues_out,
+        "tests": tests_out,
+    }
 
 
 class NoCacheStaticFiles(StaticFiles):
