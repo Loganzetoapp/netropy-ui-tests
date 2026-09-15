@@ -1,0 +1,27 @@
+{
+  "run_id": "20260915T221902Z",
+  "run_code": "RUN-63",
+  "timestamp": "2026-09-15T22:19:02Z",
+  "git_sha": "2e032ee",
+  "git_branch": "main",
+  "markers": "stateful",
+  "duration": 60.727,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_clone_while_active.py::test_t10_clone_while_active[chromium]",
+      "outcome": "fail",
+      "duration": 48.246,
+      "failure_message": "AssertionError: REAL BUG (same shape as the already-confirmed Edit-while-active finding in test_t10_edit_config_while_active.py): the ORIGINAL testbed's Stop button disappeared \u2014 its live run was disrupted \u2014 purely as a side effect of cloning it. Nothing was clicked on the original itself between confirming it was live and this check.\nassert False",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-clone-while-active-py-test-t10-clone-while-active-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_clone_while_active.py::test_t10_clone_while_active[chromium]",
+      "outcome": "error",
+      "duration": 12.433,
+      "failure_message": "failed on teardown with \"AssertionError: Locator expected to have count '0'\nActual value: 1 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T10-CloneX\").last\n    24 \u00d7 locator resolved to 1 element\n       - unexpected value \"1\"\"",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-clone-while-active-py-test-t10-clone-while-active-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

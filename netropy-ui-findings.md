@@ -163,6 +163,69 @@ allows one genuine run per exploratory test) — flagging as a real anomaly
 worth a deliberate repro, not yet confirmed root cause.
 — `tests/t10_t12_lifecycle/test_t10_double_click_start_race.py`
 
+### Any mutating action against a live testbed silently interrupts its own run
+Two independent tests found the same symptom through two completely
+different triggers:
+
+- **Editing a live testbed's config.** With a testbed genuinely live
+  (confirmed non-zero Tx/Rx), navigating into Edit, changing the Streams
+  step's frame size, and clicking Save is not blocked — no disabled
+  fields, no "can't edit while running" warning, Save reports success
+  silently. But the in-progress run doesn't survive it: Stop disappears
+  within seconds (far short of the configured hold), Port 3's packet
+  counters reset from real traffic back to 1/1 (a restart-from-scratch
+  signature, not a continuation), and the eventual run-history row has a
+  real Started-At/Duration but an **empty Result cell** — the outcome
+  isn't delayed, it's lost. Reproduced twice, including a deliberate
+  20-second poll specifically to rule out a read-before-populated race
+  (matching the pattern the UDP reference test already uses for its own
+  PASS check) — the empty Result held up both times.
+  — `tests/t10_t12_lifecycle/test_t10_edit_config_while_active.py`
+- **Cloning a live testbed.** Clone never touches the original's own
+  config — it only reads it to produce a new draft — and the clone
+  itself came up correctly as a fresh, inactive, port-free draft (no
+  shared ports with the still-running original, confirmed by reading the
+  clone's line-rate field `disabled` state directly). Despite the
+  original never being touched again after confirming it was live, its
+  Stop button vanished within seconds of the clone action completing —
+  the identical "run interrupted almost immediately" symptom, through a
+  trigger that doesn't mutate the live testbed at all, only references
+  its ID.
+  — `tests/t10_t12_lifecycle/test_t10_clone_while_active.py`
+
+Since Clone doesn't touch the source's configuration, "editing broke it"
+isn't the real mechanism — the common factor across both triggers is a
+backend call that *references* a live testbed's ID, regardless of what
+that call actually changes. Likely the same root cause as "Restarting
+Start after Stop" above (both are "some backend action taken against an
+already-live testbed silently truncates its run"), but confirmed here
+through config-edit and clone specifically, with no Start/Stop involved
+at all — worth treating as one systemic backend concern rather than
+three unrelated bugs.
+Status: reproduced across 2 tests / 3 total runs (2 for the edit case, 1
+clean run for the clone case), no confirmed root cause.
+
+### Deactivate mid-run behaves differently from Stop mid-run
+Clicking Deactivate directly while a run is live (skipping Stop entirely)
+does cleanly end the run without a crash or stuck state, but has two
+effects Stop mid-run doesn't:
+1. **It implicitly releases the ports.** Both ports came back `Available`
+   (not `Reserved`) with no separate Release click — every other lifecycle
+   test in this suite confirms Stop alone leaves ports `Reserved`,
+   requiring an explicit Release. A user deactivating to reconfigure loses
+   their reservation without being told, and on a shared box someone else
+   could claim the port immediately after.
+2. **Possible lost run-history entry — a strong lead, not yet confirmed.**
+   The testbed card captured during this test was missing the "Reports:"-
+   style run-count control entirely (present on other testbeds on the
+   box), suggesting the run ending via Deactivate-without-Stop may not get
+   recorded in run-history at all. This was incidental evidence (captured
+   for an unrelated assertion), not a direct read of the runs table — the
+   test's own run-history check exists but was never reached.
+Status: port-release behavior confirmed; lost-history-entry is an
+unconfirmed lead worth a direct follow-up check.
+— `tests/t10_t12_lifecycle/test_t10_deactivate_mid_run.py`
+
 ### Port links drop to "No Link" after activation — recurring, 4 incidents
 Ports have gone `Down / 0M / No Link` after activation on four separate
 occasions: Port 5+6 once, Port 7+8 once (both the *first-ever* activation
@@ -340,7 +403,7 @@ generate real traffic.
 | T7 · Wizard: Streams | Add/delete/clone, frame size, port distribution, layer editor | free |
 | T8 · Wizard: Traffic/Load | Stream-mix rebalancing, ramp math, TX burst/bandwidth cap | free |
 | T9 · Network Profiles | Save from wizard, select-to-populate, export/import | free |
-| T10 · Activation lifecycle | Live badges, dashboard active count, two simultaneous testbeds, default addressing, stop-mid-run, overload fail-path, 7 protocols (UDP/TCP/ICMP/multi-stream/DNS/NTP/ARP + VXLAN xfail), port-conflict-while-active, cross-layer 3-protocol multistream, asymmetric subnet pairing, rapid stop/restart cycling, Start double-click race | stateful |
+| T10 · Activation lifecycle | Live badges, dashboard active count, two simultaneous testbeds, default addressing, stop-mid-run, overload fail-path, 7 protocols (UDP/TCP/ICMP/multi-stream/DNS/NTP/ARP + VXLAN xfail), port-conflict-while-active, cross-layer 3-protocol multistream, asymmetric subnet pairing, rapid stop/restart cycling, Start double-click race, deactivate-mid-run, edit-config-while-active, clone-while-active | stateful |
 | T11 · Live statistics | Metric tabs, scope/signal filters, unit toggle, zoom | stateful |
 | T12 · Reports & exports | Run history, all 5 export formats, delete run, Reports badge | stateful |
 | T13 · Connectivity diagnostics | DHCP Pre-Acq not-supported state (rest deferred, product WIP) | free |
