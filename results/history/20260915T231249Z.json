@@ -1,0 +1,19 @@
+{
+  "run_id": "20260915T231249Z",
+  "run_code": "RUN-73",
+  "timestamp": "2026-09-15T23:12:49Z",
+  "git_sha": "2ffa31a",
+  "git_branch": "main",
+  "markers": "stateful",
+  "duration": 59.3,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_unrelated_action_during_live_run.py::test_t10_unrelated_action_during_live_run[chromium]",
+      "outcome": "fail",
+      "duration": 59.235,
+      "failure_message": "AssertionError: Locator expected to be visible\nActual value: - img \"Apposite Technologies\"\n- text: \"Netropy Traffic Generator online Unit \\\"local\\\" \u2014 the traffic-generator unit this UI controls. Online: responding to health checks.\"\n- img\n- text: \"Sep 15, 2026 16:12:53 UTC Unit clock NTP server: not configured (sandbox) Sep 15, 2026 16:12:53 UTC\"\n- button \"Account\": TU test User\n- button \"Menu\":\n  - img\n- 'heading \"T10-LiveCtrl \u00b7 UID: e53d3f14 e53d3f1432224448931f88a7febfceb2\" [level=1]':\n  - te",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-unrelated-action-during-live-run-py-test-t10-unrelated-action-during-live-run-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

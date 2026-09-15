@@ -1,0 +1,20 @@
+{
+  "run_id": "20260915T224815Z",
+  "run_code": "RUN-68",
+  "timestamp": "2026-09-15T22:48:15Z",
+  "git_sha": "2ffa31a",
+  "git_branch": "main",
+  "markers": "stateful",
+  "duration": 55.303,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_double_click_start_race.py::test_t10_double_click_start_race[chromium]",
+      "outcome": "fail",
+      "duration": 55.168,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"button\", name=\"Apply\", exact=True)",
+      "screenshot": "webapp-artifacts/94e0cd94-93bc-41f0-8164-519881c01827/3/test-failed-1.png",
+      "trace": "webapp-artifacts/94e0cd94-93bc-41f0-8164-519881c01827/3/trace.zip"
+    }
+  ],
+  "batch_id": "94e0cd94-93bc-41f0-8164-519881c01827"
+}

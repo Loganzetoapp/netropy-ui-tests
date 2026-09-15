@@ -1,0 +1,28 @@
+{
+  "run_id": "20260915T224440Z",
+  "run_code": "RUN-65",
+  "timestamp": "2026-09-15T22:44:40Z",
+  "git_sha": "2ffa31a",
+  "git_branch": "main",
+  "markers": "stateful",
+  "duration": 117.596,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_asymmetric_subnet_pairing.py::test_t10_asymmetric_subnet_pairing[chromium]",
+      "outcome": "fail",
+      "duration": 96.028,
+      "failure_message": "AssertionError: Locator expected to be visible\nActual value: - img \"Apposite Technologies\"\n- text: Netropy Traffic Generator | Sign in Username\n- textbox \"username\"\n- text: Password\n- textbox \"password\"\n- button \"Sign in\"\n- text: Controller online \u2014 unit local reachable Powered by\n- link \"Apposite Technologies\":\n  - /url: https://www.apposite-tech.com\n- text: \u00a9 2026\nError: element(s) not found \nCall log:\n  - Expect \"to_be_visible\" with timeout 75000ms\n  - waiting for get_by_role(\"button\", name=\"",
+      "screenshot": "webapp-artifacts/7fdaaf78-6f30-4c5d-8f2e-bfde9799604f/1/test-failed-1.png",
+      "trace": "webapp-artifacts/7fdaaf78-6f30-4c5d-8f2e-bfde9799604f/1/trace.zip"
+    },
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_asymmetric_subnet_pairing.py::test_t10_asymmetric_subnet_pairing[chromium]",
+      "outcome": "error",
+      "duration": 21.522,
+      "failure_message": "failed on teardown with \"AssertionError: Locator expected to be visible\nActual value: - img \"Apposite Technologies\"\n- text: Netropy Traffic Generator | Sign in Username\n- textbox \"username\"\n- text: Password\n- textbox \"password\"\n- button \"Sign in\"\n- text: Controller online \u2014 unit local reachable Powered by\n- link \"Apposite Technologies\":\n  - /url: https://www.apposite-tech.com\n- text: \u00a9 2026\nError: element(s) not found \nCall log:\n  - Expect \"to_be_visible\" with timeout 20000ms\n  - waiting for get",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-asymmetric-subnet-pairing-py-test-t10-asymmetric-subnet-pairing-chromium/test-failed-1.png",
+      "trace": "artifacts/tests-t10-t12-lifecycle-test-t10-asymmetric-subnet-pairing-py-test-t10-asymmetric-subnet-pairing-chromium/trace.zip"
+    }
+  ],
+  "batch_id": "7fdaaf78-6f30-4c5d-8f2e-bfde9799604f"
+}
