@@ -37,6 +37,7 @@ class IterationEvent:
     total: int
     status: str
     detail: Optional[str] = None
+    run_code: Optional[str] = None
 
 
 @dataclass
@@ -93,6 +94,18 @@ def _new_history_file(history_dir: Path, before: set[Path]) -> Optional[Path]:
     if not new_files:
         return None
     return max(new_files, key=lambda p: p.stat().st_mtime)
+
+
+def _run_code_for(history_file: Path) -> Optional[str]:
+    """Read `run_code` back out of a session's history JSON — same
+    defensive style as `_find_test_result`: any read/parse failure just
+    yields None, since a missing/malformed run_code must never break
+    iteration status reporting."""
+    try:
+        data = json.loads(history_file.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data.get("run_code")
 
 
 def _find_test_result(history_file: Path, nodeid: str) -> Optional[dict]:
@@ -227,6 +240,7 @@ class TestRunner:
             env = {**os.environ, "NETROPY_WEBAPP_BATCH_ID": batch.id}
             before = _snapshot_history_files(self._history_dir)
             test_result: Optional[dict] = None
+            run_code: Optional[str] = None
             cmd = [sys.executable, "-m", "pytest", batch.nodeid, "-m", batch.marker]
             if batch.headed:
                 cmd.append("--headed")
@@ -243,6 +257,7 @@ class TestRunner:
                 test_result = (
                     _find_test_result(history_file, batch.nodeid) if history_file else None
                 )
+                run_code = _run_code_for(history_file) if history_file else None
                 if test_result is None:
                     status, detail = "error", "No result recorded for this run"
                 else:
@@ -263,7 +278,9 @@ class TestRunner:
 
             if status == "passed":
                 passed += 1
-            batch.events.put(IterationEvent(batch.id, i, batch.repeat_count, status, detail))
+            batch.events.put(
+                IterationEvent(batch.id, i, batch.repeat_count, status, detail, run_code)
+            )
 
             if status in ("failed", "error"):
                 self._queue_failure_review(batch.nodeid, detail, test_result)

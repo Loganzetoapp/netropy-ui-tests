@@ -19,6 +19,7 @@ themselves stay gitignored, raw and regenerable.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import subprocess
@@ -33,6 +34,7 @@ DEFAULT_JUNIT = ROOT / "results" / "junit.xml"
 DEFAULT_HISTORY_DIR = ROOT / "results" / "history"
 DEFAULT_ARTIFACTS_DIR = ROOT / "results" / "artifacts"
 FAILURE_MESSAGE_LIMIT = 500
+RUN_SEQ_FILENAME = ".run_seq"
 
 
 def _git(*args: str) -> Optional[str]:
@@ -144,12 +146,46 @@ def _parse_testcase(tc: ET.Element, artifacts_dir: Path) -> dict:
     }
 
 
+def _next_run_code(history_dir: Path = DEFAULT_HISTORY_DIR) -> str:
+    """Mint the next short human-facing run code (`RUN-<n>`) from a tiny
+    counter file, `results/history/.run_seq` — a plain text integer, the
+    last code issued. `fcntl.flock`-guarded read-increment-write so two
+    pytest sessions finishing at the same moment (e.g. the webapp
+    triggering back-to-back iterations) never mint the same code —
+    macOS/Linux only, no Windows support needed for this repo.
+
+    Also the sequence backfill (`scripts/backfill_run_codes.py`) builds
+    on: calling this repeatedly just keeps counting up from wherever the
+    file was left, so new runs and backfilled old runs share one
+    collision-free sequence.
+    """
+    history_dir.mkdir(parents=True, exist_ok=True)
+    seq_path = history_dir / RUN_SEQ_FILENAME
+    seq_path.touch(exist_ok=True)  # ensure it exists so "r+" below can open it
+    with open(seq_path, "r+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            raw = f.read().strip()
+            try:
+                n = int(raw) if raw else 0
+            except ValueError:
+                n = 0  # corrupt/hand-edited counter file — never fail collection over it
+            n += 1
+            f.seek(0)
+            f.truncate()
+            f.write(str(n))
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+    return f"RUN-{n}"
+
+
 def build_summary(
     junit_path: Path = DEFAULT_JUNIT,
     markers: str = "",
     artifacts_dir: Path = DEFAULT_ARTIFACTS_DIR,
     run_time: Optional[datetime] = None,
     batch_id: Optional[str] = None,
+    history_dir: Path = DEFAULT_HISTORY_DIR,
 ) -> Optional[dict]:
     """Parse junit_path into a history summary dict, or None if it can't be
     read/parsed (missing file, no tests ran, malformed XML)."""
@@ -179,9 +215,11 @@ def build_summary(
 
     now = run_time or datetime.now(timezone.utc)
     run_id = now.strftime("%Y%m%dT%H%M%SZ")
+    run_code = _next_run_code(history_dir)
 
     summary = {
         "run_id": run_id,
+        "run_code": run_code,
         "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "git_sha": _git("rev-parse", "--short", "HEAD") or "unknown",
         "git_branch": _git("rev-parse", "--abbrev-ref", "HEAD") or "unknown",
@@ -220,7 +258,11 @@ def collect(
     if batch_id is None:
         batch_id = os.environ.get("NETROPY_WEBAPP_BATCH_ID")
     summary = build_summary(
-        junit_path, markers=markers, artifacts_dir=artifacts_dir, batch_id=batch_id
+        junit_path,
+        markers=markers,
+        artifacts_dir=artifacts_dir,
+        batch_id=batch_id,
+        history_dir=history_dir,
     )
     if summary is None:
         return None

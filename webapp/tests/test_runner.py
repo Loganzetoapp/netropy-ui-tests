@@ -11,13 +11,14 @@ import pytest
 from webapp.runner import AlreadyRunningError, TestRunner, _find_test_result, _persist_iteration_artifacts
 
 
-def _fake_subprocess_run_factory(history_dir, outcome="pass", stored_suffix=""):
+def _fake_subprocess_run_factory(history_dir, outcome="pass", stored_suffix="", run_code=None):
     """`stored_suffix` simulates the browser-parametrize suffix real
     pytest-playwright always appends to the recorded nodeid (e.g.
     "[chromium]") even though the *triggering* nodeid built by catalog.py
     never has one. Default "" preserves the old (unrealistic) behavior of
     writing back the triggering nodeid verbatim, for tests that don't
-    care about the suffix mismatch."""
+    care about the suffix mismatch. `run_code` simulates the run_code
+    scripts/collect_run.py mints into every real history file."""
 
     def _fake_run(cmd, cwd, env, capture_output, text, timeout):
         batch_id = env["NETROPY_WEBAPP_BATCH_ID"]
@@ -25,29 +26,28 @@ def _fake_subprocess_run_factory(history_dir, outcome="pass", stored_suffix=""):
         nodeid = cmd[3] + stored_suffix
         history_dir.mkdir(parents=True, exist_ok=True)
         run_id = f"{time.time_ns()}"
-        (history_dir / f"{run_id}.json").write_text(
-            json.dumps(
+        data = {
+            "run_id": run_id,
+            "timestamp": "2026-01-01T00:00:00Z",
+            "git_sha": "abc123",
+            "git_branch": "main",
+            "markers": "hardware_free",
+            "duration": 1.23,
+            "batch_id": batch_id,
+            "tests": [
                 {
-                    "run_id": run_id,
-                    "timestamp": "2026-01-01T00:00:00Z",
-                    "git_sha": "abc123",
-                    "git_branch": "main",
-                    "markers": "hardware_free",
+                    "nodeid": nodeid,
+                    "outcome": outcome,
                     "duration": 1.23,
-                    "batch_id": batch_id,
-                    "tests": [
-                        {
-                            "nodeid": nodeid,
-                            "outcome": outcome,
-                            "duration": 1.23,
-                            "failure_message": None if outcome == "pass" else "boom",
-                            "screenshot": None,
-                            "trace": None,
-                        }
-                    ],
+                    "failure_message": None if outcome == "pass" else "boom",
+                    "screenshot": None,
+                    "trace": None,
                 }
-            )
-        )
+            ],
+        }
+        if run_code:
+            data["run_code"] = run_code
+        (history_dir / f"{run_id}.json").write_text(json.dumps(data))
 
         class _Result:
             returncode = 0 if outcome == "pass" else 1
@@ -119,6 +119,33 @@ def test_single_passing_run(tmp_path):
     assert events[1].status == "passed"
     assert events[2].passed == 1
     assert events[2].total == 1
+
+
+def test_iteration_event_carries_run_code_from_history_file(tmp_path):
+    history_dir = tmp_path / "history"
+    runner = TestRunner(
+        repo_root=tmp_path,
+        history_dir=history_dir,
+        subprocess_run=_fake_subprocess_run_factory(history_dir, "pass", run_code="RUN-7"),
+    )
+    batch_id = runner.start("tests/x.py::test_x", "hardware_free", 1)
+    events = list(runner.events(batch_id))
+    assert events[0].run_code is None  # the initial "running" event has no result yet
+    assert events[1].run_code == "RUN-7"
+
+
+def test_iteration_event_run_code_is_none_when_history_file_lacks_one(tmp_path):
+    """Pre-run_code (or pre-backfill) history files have no run_code at
+    all — must surface as None, not raise."""
+    history_dir = tmp_path / "history"
+    runner = TestRunner(
+        repo_root=tmp_path,
+        history_dir=history_dir,
+        subprocess_run=_fake_subprocess_run_factory(history_dir, "pass"),
+    )
+    batch_id = runner.start("tests/x.py::test_x", "hardware_free", 1)
+    events = list(runner.events(batch_id))
+    assert events[1].run_code is None
 
 
 def test_failing_run_reports_failure_message(tmp_path):

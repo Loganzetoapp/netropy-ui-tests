@@ -101,6 +101,19 @@ function escapeAttr(s) {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 }
 
+// History (and therefore the run-detail page) records the nodeid
+// pytest-playwright actually produced, e.g. "...::test_x[chromium]" — but
+// POST /api/runs, and the whole Tests-tab catalog it validates against,
+// only ever knows the bare, no-suffix nodeid built from source (see
+// app.py's _marker_for and runner.py's _matches_catalog_nodeid, which
+// document this exact split). Strip the suffix before handing a
+// history-sourced nodeid back to startRun/openRunModal, or "Run again"
+// 404s against a nodeid the catalog was never going to recognize.
+function catalogNodeid(nodeid) {
+  const idx = nodeid.lastIndexOf("[");
+  return idx === -1 ? nodeid : nodeid.slice(0, idx);
+}
+
 function escapeHtml(s) {
   return String(s)
     .replace(/&/g, "&amp;")
@@ -228,9 +241,23 @@ document.getElementById("run-modal-count").addEventListener("keydown", (e) => {
 
 document.getElementById("run-modal-confirm").addEventListener("click", async () => {
   const headed = document.getElementById("run-modal-headed").checked;
+  // The modal can now be opened from pages other than Tests (e.g. the
+  // run-detail page's "Run again" button) — the live status pill
+  // streamRun updates only exists on a Tests-tab row, so jump there first
+  // so progress is actually visible. Skipped when already on Tests (the
+  // normal case) so an in-progress expanded description panel etc. isn't
+  // disturbed by a needless re-render.
+  const alreadyOnTests = document.getElementById("nav-tests").classList.contains("active");
   if (modalMode === "group") {
     const nodeids = modalGroupNodeids;
     closeRunModal();
+    // Must finish rendering the real Tests-tab rows before starting the
+    // run — streamRun looks up its status pill by nodeid immediately
+    // after the run starts, and that element doesn't exist until this
+    // resolves. Racing the two would silently drop the live status/View
+    // summary link the first time (loadModules replaces panel.innerHTML
+    // out from under whatever streamRun already found).
+    if (!alreadyOnTests) await showPage("tests");
     await runAllInGroup(nodeids, headed);
     return;
   }
@@ -238,6 +265,7 @@ document.getElementById("run-modal-confirm").addEventListener("click", async () 
   const count = Number.isFinite(raw) && raw > 0 ? raw : 1;
   const nodeid = modalNodeid;
   closeRunModal();
+  if (!alreadyOnTests) await showPage("tests");
   await startRun(nodeid, count, headed);
 });
 
@@ -278,9 +306,20 @@ function setRunControlsEnabled(enabled) {
 
 function streamRun(batchId, nodeid) {
   const el = document.querySelector(`[data-status-for="${nodeid}"]`);
+  // The "View summary →" link (added once a run_code is known, see the
+  // batch_complete handler below) lives next to the status pill, inside
+  // the same actions container the pill and Run button already share.
+  const actionsEl = el ? el.closest(".test-row-actions") : null;
+  let lastRunCode = null;
   state.liveStatus[nodeid] = "running";
   state.batchRunning = true;
   setRunControlsEnabled(false);
+  // A re-run of the same row must not leave a stale link pointing at the
+  // previous run_code visible while this new run is in flight.
+  if (actionsEl) {
+    const stale = actionsEl.querySelector(".view-summary-link");
+    if (stale) stale.remove();
+  }
   // Reflect "running" the instant the batch is confirmed started, rather
   // than waiting on the first SSE round-trip (pytest collection can take
   // a beat before the first iteration event arrives).
@@ -296,6 +335,7 @@ function streamRun(batchId, nodeid) {
   source.onmessage = (e) => {
     const payload = JSON.parse(e.data);
     if (payload.type === "iteration") {
+      if (payload.run_code) lastRunCode = payload.run_code;
       if (el) {
         el.textContent = `${payload.status} (${payload.iteration}/${payload.total})`;
         el.className = "pill " + statusPillClass(payload.status);
@@ -303,6 +343,16 @@ function streamRun(batchId, nodeid) {
     } else if (payload.type === "batch_complete") {
       state.liveStatus[nodeid] = "done";
       if (el) el.textContent = `${payload.passed}/${payload.total} passed`;
+      // lastRunCode is the most recent iteration's code — for the common
+      // repeat_count=1 case that's the only run; for a repeat run it's
+      // the last one, which is what "View summary" should point at.
+      if (actionsEl && lastRunCode) {
+        const link = document.createElement("a");
+        link.href = `#run/${encodeURIComponent(lastRunCode)}`;
+        link.className = "view-summary-link";
+        link.textContent = "View summary →";
+        actionsEl.appendChild(link);
+      }
       source.close();
       finish();
     }
@@ -340,24 +390,294 @@ async function runAllInGroup(nodeids, headed = false) {
 document.getElementById("nav-tests").addEventListener("click", () => showPage("tests"));
 document.getElementById("nav-results").addEventListener("click", () => showPage("results"));
 document.getElementById("nav-findings").addEventListener("click", () => showPage("findings"));
+// Overview is the one page-nav tab that's also address-bar-linkable (see
+// the routing block near the bottom of this file). Setting the hash (when
+// it actually changes) lets the hashchange listener drive the render, so
+// clicking here behaves identically to landing directly on #overview;
+// when the hash is already "#overview" (no change → no hashchange event
+// would fire) render directly instead.
+document.getElementById("nav-overview").addEventListener("click", () => {
+  if (location.hash === "#overview") {
+    showPage("overview");
+  } else {
+    location.hash = "overview";
+  }
+});
 
+// Returns the underlying render call's promise (all four are async
+// functions) so a caller that needs the panel to actually be populated
+// before doing anything else — see the run-modal confirm handler's
+// "switch to Tests tab first" case — can `await showPage(...)`. Existing
+// callers (the plain nav-button clicks) don't await it, which is fine —
+// this is purely additive, nothing about the fire-and-forget behavior
+// they already relied on changes.
 function showPage(page) {
+  document.getElementById("nav-overview").classList.toggle("active", page === "overview");
   document.getElementById("nav-tests").classList.toggle("active", page === "tests");
   document.getElementById("nav-results").classList.toggle("active", page === "results");
   document.getElementById("nav-findings").classList.toggle("active", page === "findings");
   const tabs = document.getElementById("module-tabs");
   const panel = document.getElementById("module-panel");
-  if (page === "results") {
+  if (page === "overview") {
     tabs.hidden = true;
-    renderResults(panel);
+    return renderOverview(panel);
+  } else if (page === "results") {
+    tabs.hidden = true;
+    return renderResults(panel);
   } else if (page === "findings") {
     tabs.hidden = true;
-    renderFindings(panel);
+    return renderFindings(panel);
   } else {
     tabs.hidden = false;
-    loadModules();
+    return loadModules();
   }
 }
+
+// --- Overview tab (per-catalog-area rollup) ---------------------------------
+
+function outcomePillClass(outcome) {
+  // Covers both vocabularies this app uses: history/API outcomes
+  // ("pass"/"fail"/"error"/"skip") and SSE iteration statuses
+  // ("passed"/"failed"/"error"/"running").
+  if (outcome === "pass" || outcome === "passed") return "pill-ok";
+  if (outcome === "fail" || outcome === "failed" || outcome === "error") return "pill-bad";
+  return "pill-warn";
+}
+
+async function renderOverview(panel) {
+  panel.innerHTML = "<p>Loading overview…</p>";
+  try {
+    const { areas } = await fetchJSON("/api/overview");
+    panel.innerHTML = `<div class="overview-grid">${areas.map(renderAreaCard).join("")}</div>`;
+  } catch (err) {
+    panel.innerHTML = `<p class="test-desc">Couldn't load overview: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function renderAreaCard(area) {
+  const passRatePct = area.pass_rate == null ? null : Math.round(area.pass_rate * 100);
+  const passRatePill =
+    passRatePct == null
+      ? `<span class="pill muted-cell">No runs</span>`
+      : `<span class="pill ${passRatePct === 100 ? "pill-ok" : passRatePct < 70 ? "pill-bad" : "pill-warn"}">${passRatePct}%</span>`;
+  // A last_run can itself carry a null run_code — history predating the
+  // backfill, or a plain CLI run collect_run.py never minted one for.
+  // Never assume it's linkable.
+  let lastRunHtml = `<span class="muted-cell">No runs yet</span>`;
+  if (area.last_run) {
+    const codeHtml = area.last_run.run_code
+      ? `<a href="#run/${encodeURIComponent(area.last_run.run_code)}">${escapeHtml(area.last_run.run_code)}</a>`
+      : `<span class="muted-cell">unlinked run</span>`;
+    lastRunHtml = `${codeHtml} <span class="muted-cell">· ${formatTimestamp(area.last_run.timestamp)}</span>`;
+  }
+  const flakyHtml = area.flaky_tests.length
+    ? `<div class="area-card-row"><span class="area-card-label">Flaky</span></div>
+       <ul class="flaky-list">${area.flaky_tests.map((nid) => `<li>${escapeHtml(nid.split("::").pop())}</li>`).join("")}</ul>`
+    : "";
+  const issueHtml =
+    area.confirmed_issue_count > 0
+      ? `<div class="area-card-row">
+           <button type="button" class="pill pill-warn" data-jump="findings">
+             ${area.confirmed_issue_count} confirmed issue${area.confirmed_issue_count === 1 ? "" : "s"}
+           </button>
+         </div>`
+      : "";
+  return `
+    <div class="card area-card">
+      <div class="area-card-header">
+        <h3>${escapeHtml(area.label)}</h3>
+        ${passRatePill}
+      </div>
+      <div class="area-card-row"><span class="area-card-label">Last run</span> ${lastRunHtml}</div>
+      ${flakyHtml}
+      ${issueHtml}
+    </div>`;
+}
+
+// Clicking a confirmed-issue badge (Overview) or the "possible known
+// issues" callout's findings link (run-detail) both just want to land on
+// the Findings tab — no in-page scrolling. One delegated listener covers
+// both regardless of how many times those panels get re-rendered.
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest('[data-jump="findings"]');
+  if (btn) {
+    e.preventDefault();
+    showPage("findings");
+  }
+});
+
+// --- Run-detail page ---------------------------------------------------------
+
+function formatDuration(seconds) {
+  return typeof seconds === "number" ? `${seconds.toFixed(1)}s` : "—";
+}
+
+function renderKnownIssueMatches(matches) {
+  if (!matches || matches.length === 0) return "";
+  const items = matches
+    .map((m) => `<li><span class="pill pill-warn">possibly related</span> ${escapeHtml(m.title)}</li>`)
+    .join("");
+  return `
+    <div class="known-issue-callout">
+      <div class="known-issue-callout-title">Possible known issues</div>
+      <p class="test-desc">
+        Keyword overlap only — not a confirmed link. Review before assuming this is the same bug.
+      </p>
+      <ul>${items}</ul>
+      <button type="button" class="link-button" data-jump="findings">See confirmed issues in Findings →</button>
+    </div>`;
+}
+
+function renderRunDetailTestRow(test, run) {
+  const areaLabel = test.area
+    ? `<a href="#overview">${escapeHtml(test.area.label)}</a>`
+    : `<span class="muted-cell">Unmapped area</span>`;
+  const failureBlock = test.failure_message
+    ? `<pre class="run-detail-failure">${escapeHtml(test.failure_message)}</pre>`
+    : "";
+  const artifacts = [
+    test.screenshot ? `<a href="/results/${test.screenshot}" target="_blank">screenshot</a>` : null,
+    test.trace ? `<a href="/results/${test.trace}" target="_blank">trace</a>` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return `
+    <div class="run-detail-test">
+      <div class="run-detail-test-top">
+        <div>
+          <div class="test-name">${escapeHtml(test.nodeid.split("::").pop())}</div>
+          <div class="test-desc">${escapeHtml(test.nodeid)}</div>
+        </div>
+        <div class="run-detail-test-actions">
+          ${areaLabel}
+          <span class="pill ${outcomePillClass(test.outcome)}">${escapeHtml(test.outcome)}</span>
+          <span class="test-desc">${formatDuration(test.duration)}</span>
+          <button type="button" class="btn-outline rerun-btn"
+            data-nodeid="${escapeAttr(catalogNodeid(test.nodeid))}"
+            data-marker="${escapeAttr(run.markers || "hardware_free")}">Run again</button>
+        </div>
+      </div>
+      ${artifacts ? `<div class="run-detail-artifacts">${artifacts}</div>` : ""}
+      ${failureBlock}
+      ${renderKnownIssueMatches(test.known_issue_matches)}
+    </div>`;
+}
+
+function renderSiblingRuns(nodeid, rows) {
+  if (!rows || rows.length === 0) return "";
+  const items = rows
+    .map((r) => {
+      // A pre-backfill or CLI-triggered sibling may have no run_code at
+      // all — show it as an unlinked entry rather than a broken link.
+      const codeHtml = r.run_code
+        ? `<a href="#run/${encodeURIComponent(r.run_code)}">${escapeHtml(r.run_code)}</a>`
+        : `<span class="muted-cell">unlinked run</span>`;
+      return `<li>${codeHtml}
+        <span class="test-desc">${formatTimestamp(r.timestamp)}</span>
+        <span class="pill ${outcomePillClass(r.outcome)}">${escapeHtml(r.outcome)}</span></li>`;
+    })
+    .join("");
+  return `
+    <div class="card sibling-runs-card">
+      <div class="test-desc">${escapeHtml(nodeid.split("::").pop())}</div>
+      <ul class="sibling-runs-list">${items}</ul>
+    </div>`;
+}
+
+function renderRunDetailContent(run) {
+  const total = run.tests.length;
+  const passCount = run.tests.filter((t) => t.outcome === "pass").length;
+  const anyFailed = run.tests.some((t) => t.outcome === "fail" || t.outcome === "error");
+  const overallClass = total > 0 && passCount === total ? "pill-ok" : anyFailed ? "pill-bad" : "pill-warn";
+  const siblingSections = Object.entries(run.sibling_runs || {})
+    .map(([nodeid, rows]) => renderSiblingRuns(nodeid, rows))
+    .join("");
+  return `
+    <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
+    <div class="card run-header">
+      <div class="run-header-top">
+        <h2>${escapeHtml(run.run_code || run.run_id)}</h2>
+        <span class="pill ${overallClass}">${passCount}/${total} passed</span>
+        ${run.flaky ? `<span class="pill pill-warn">Flaky</span>` : ""}
+      </div>
+      <dl class="run-meta">
+        <div><dt>Started</dt><dd>${formatTimestamp(run.timestamp)}</dd></div>
+        <div><dt>Git</dt><dd>${run.git_sha ? escapeHtml(run.git_sha) : "—"}${run.git_branch ? ` on ${escapeHtml(run.git_branch)}` : ""}</dd></div>
+        <div><dt>Markers</dt><dd>${run.markers ? escapeHtml(run.markers) : "—"}</dd></div>
+        <div><dt>Duration</dt><dd>${formatDuration(run.duration)}</dd></div>
+      </dl>
+    </div>
+    <h3 class="run-detail-section-title">Tests in this run</h3>
+    <div class="run-detail-tests">${run.tests.map((t) => renderRunDetailTestRow(t, run)).join("")}</div>
+    ${siblingSections ? `<h3 class="run-detail-section-title">Other runs of these tests</h3>${siblingSections}` : ""}
+  `;
+}
+
+function attachRunDetailHandlers(panel) {
+  panel.querySelectorAll(".rerun-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      openRunModal(btn.dataset.nodeid, btn.dataset.marker, btn);
+    });
+  });
+}
+
+async function renderRunDetail(panel, runCode) {
+  panel.innerHTML = "<p>Loading run…</p>";
+  try {
+    const run = await fetchJSON(`/api/runs/${encodeURIComponent(runCode)}`);
+    panel.innerHTML = renderRunDetailContent(run);
+    attachRunDetailHandlers(panel);
+  } catch (err) {
+    // Covers the backend's 404 ("Unknown run: RUN-x") and any other
+    // fetch failure alike — a run-detail page that failed to load must
+    // never render broken, just a plain not-found-style state with a way
+    // back out.
+    panel.innerHTML = `
+      <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
+      <div class="card run-not-found">
+        <h2>Run not found</h2>
+        <p class="test-desc">${escapeHtml(err.message)}</p>
+      </div>`;
+  }
+}
+
+function showRunDetailPage(runCode) {
+  document.getElementById("nav-overview").classList.remove("active");
+  document.getElementById("nav-tests").classList.remove("active");
+  document.getElementById("nav-results").classList.remove("active");
+  document.getElementById("nav-findings").classList.remove("active");
+  document.getElementById("module-tabs").hidden = true;
+  renderRunDetail(document.getElementById("module-panel"), runCode);
+}
+
+// --- Minimal hash routing ----------------------------------------------------
+//
+// This app has no general router — only these two addressable states are
+// worth a URL: an overview snapshot and a single run's detail page, both
+// meant to be shareable/bookmarkable/linkable-to from elsewhere in the
+// app. Tests/Results/Findings stay exactly as they were (no hash), driven
+// only by their nav buttons like before.
+
+function parseHash() {
+  const hash = location.hash.slice(1);
+  if (!hash) return null;
+  const runMatch = hash.match(/^run\/(.+)$/);
+  if (runMatch) return { page: "run", code: decodeURIComponent(runMatch[1]) };
+  if (hash === "overview") return { page: "overview" };
+  return null;
+}
+
+function handleHashChange() {
+  const route = parseHash();
+  if (!route) return;
+  if (route.page === "overview") {
+    showPage("overview");
+  } else if (route.page === "run") {
+    showRunDetailPage(route.code);
+  }
+}
+
+window.addEventListener("hashchange", handleHashChange);
 
 async function renderFindings(panel) {
   panel.innerHTML = "<p>Loading findings…</p>";
@@ -379,12 +699,16 @@ async function renderResults(panel) {
     }
     panel.innerHTML = `
       <table class="results-table">
-        <thead><tr><th>Test</th><th>Runs</th><th>Pass rate</th><th>Duration</th><th>Started</th><th>Artifacts</th></tr></thead>
+        <thead><tr><th>Run</th><th>Test</th><th>Runs</th><th>Pass rate</th><th>Duration</th><th>Started</th><th>Artifacts</th></tr></thead>
         <tbody>${batches.map(renderResultRow).join("")}</tbody>
       </table>`;
   } catch (err) {
     panel.innerHTML = `<p class="test-desc">Couldn't load results: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+function formatTimestamp(ts) {
+  return ts ? ts.replace("T", " ").replace("Z", " UTC") : "—";
 }
 
 function renderResultRow(batch) {
@@ -402,15 +726,35 @@ function renderResultRow(batch) {
       ])
       .filter(Boolean)
       .join(" · ") || "—";
+  // Older history predates run codes (before the backfill) — those rows
+  // just show a plain dash instead of a link, same as elsewhere in this
+  // file that surfaces run_code.
+  const runCell = batch.run_code
+    ? `<a href="#run/${encodeURIComponent(batch.run_code)}">${escapeHtml(batch.run_code)}</a>`
+    : `<span class="muted-cell">—</span>`;
   return `
     <tr>
+      <td>${runCell}</td>
       <td>${batch.nodeid.split("::").pop()}</td>
       <td><span class="iteration-dots">${dots}</span></td>
       <td>${batch.pass_count}/${batch.total}</td>
       <td>${batch.total_duration.toFixed(1)}s</td>
-      <td>${batch.started_at.replace("T", " ").replace("Z", " UTC")}</td>
+      <td>${formatTimestamp(batch.started_at)}</td>
       <td>${links}</td>
     </tr>`;
 }
 
-loadModules();
+// Initial load: honor a deep link straight to #overview or #run/<code> if
+// one is already in the address bar (e.g. a bookmarked/shared link, or a
+// page reload); otherwise this is unchanged from before — just boot the
+// Tests tab, which is already marked active in the static HTML.
+{
+  const initialRoute = parseHash();
+  if (initialRoute && initialRoute.page === "overview") {
+    showPage("overview");
+  } else if (initialRoute && initialRoute.page === "run") {
+    showRunDetailPage(initialRoute.code);
+  } else {
+    loadModules();
+  }
+}

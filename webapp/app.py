@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import secrets
+from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
@@ -22,9 +24,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from webapp.catalog import discover_groups
-from webapp.persistence import list_batches
+from webapp.catalog import TestGroup, discover_groups
+from webapp.known_issues import match_failure, parse_confirmed_issues
+from webapp.persistence import HISTORY_DIR, get_run, list_batches, list_runs_for_nodeid, list_test_runs
 from webapp.runner import AlreadyRunningError, IterationEvent, TestRunner
+from webapp.trace_summary import extract_trace_summary
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = Path(__file__).parent / "static"
@@ -138,6 +142,7 @@ def _sse_format(event) -> str:
             "total": event.total,
             "status": event.status,
             "detail": event.detail,
+            "run_code": event.run_code,
         }
     else:
         payload = {"type": "batch_complete", "passed": event.passed, "total": event.total}
@@ -165,6 +170,7 @@ def get_results():
                 "pass_count": b.pass_count,
                 "total": len(b.iterations),
                 "total_duration": b.total_duration,
+                "run_code": b.run_code,
                 "iterations": [
                     {
                         "run_id": i.run_id,
@@ -174,6 +180,7 @@ def get_results():
                         "failure_message": i.failure_message,
                         "screenshot": i.screenshot,
                         "trace": i.trace,
+                        "run_code": i.run_code,
                     }
                     for i in b.iterations
                 ],
@@ -195,6 +202,229 @@ def get_findings():
             FINDINGS_PATH.read_text(), extensions=["fenced_code", "tables"]
         )
     return {"html": html}
+
+
+# --- Run-detail and area-rollup endpoints -----------------------------------
+#
+# Both build on the same two cheap primitives: catalog.discover_groups()
+# (static, from source — the t1_auth/t10_t12_lifecycle-style taxonomy) and
+# persistence.list_test_runs() (every history file, flattened to one row
+# per test). Neither endpoint keeps any new state — everything is derived
+# fresh from what's already on disk.
+
+SIBLING_RUN_LIMIT = 5  # "other runs of this test" — last N, excluding this one
+FLAKY_WINDOW = 10  # N-of-last-M rule: disagreement among the last M outcomes
+
+_LEADING_AREA_TOKEN_RE = re.compile(r"^t\d+$")
+
+
+def _group_area_tokens(group_id: str) -> set[str]:
+    """The leading T-number tokens of a catalog group id, e.g.
+    "t10_t12_lifecycle" -> {"T10", "T12"} — the same tokens `catalog.py`'s
+    `_group_label` reads off the directory name, uppercased to match the
+    "T10"-style area `known_issues.py` infers from a finding's body."""
+    tokens: set[str] = set()
+    for part in group_id.split("_"):
+        if _LEADING_AREA_TOKEN_RE.match(part):
+            tokens.add(part.upper())
+        else:
+            break
+    return tokens
+
+
+def _area_for_nodeid(nodeid: str, groups: list[TestGroup]) -> Optional[dict]:
+    """Map a test's nodeid back to its catalog group by matching the file
+    path (the part of the nodeid before "::") against each group's known
+    test files — not by matching the individual test entry, so a test
+    that's excluded from the catalog itself (e.g. quarantined, or run out
+    of a "_all" combined-suite file `catalog.py` deliberately skips) can
+    still resolve an area as long as its *file* belongs to a group.
+    Returns None when nothing matches (unknown/combined-suite file) —
+    always a possible outcome here, never an error."""
+    file_path = nodeid.split("::", 1)[0]
+    for group in groups:
+        for f in group.files:
+            if f.path == file_path:
+                return {"id": group.id, "label": group.label}
+    return None
+
+
+def _is_flaky(rows: list[dict]) -> bool:
+    """`rows` newest-first for one nodeid (see `list_runs_for_nodeid`) —
+    flaky iff the outcomes among the last `FLAKY_WINDOW` disagree rather
+    than being uniform (Allure-style N-of-last-M rule)."""
+    outcomes = {r["outcome"] for r in rows[:FLAKY_WINDOW]}
+    return len(outcomes) > 1
+
+
+def _known_issue_area_token(nodeid: str, area: Optional[dict]) -> Optional[str]:
+    """`known_issues.match_failure`'s `area` parameter expects a single
+    "T10"-style token (matching what it infers from a finding's body),
+    not a catalog group id like "t10_t12_lifecycle" — a group can bundle
+    several T-numbers (see `_group_area_tokens`). For a single-number
+    group this is unambiguous; for a multi-number one, prefer whichever
+    token literally appears in this test's own file name, falling back to
+    the lowest-numbered token so a multi-area group still contributes
+    *some* signal rather than none."""
+    if not area:
+        return None
+    tokens = _group_area_tokens(area["id"])
+    if not tokens:
+        return None
+    if len(tokens) == 1:
+        return next(iter(tokens))
+    file_stem = Path(nodeid.split("::", 1)[0]).stem.lower()
+    for token in sorted(tokens):
+        if token.lower() in file_stem:
+            return token
+    return sorted(tokens)[0]
+
+
+@app.get("/api/runs/{run_code}")
+def get_run_detail(run_code: str):
+    run = get_run(run_code, HISTORY_DIR)
+    if run is None:
+        raise HTTPException(404, f"Unknown run: {run_code}")
+
+    groups = discover_groups()
+    tests_out = []
+    sibling_runs: dict[str, list[dict]] = {}
+    any_flaky = False
+
+    for test in run.get("tests", []):
+        nodeid = test.get("nodeid")
+        outcome = test.get("outcome")
+        failure_message = test.get("failure_message")
+        area = _area_for_nodeid(nodeid, groups) if nodeid else None
+
+        known_issue_matches: list[dict] = []
+        if outcome in ("fail", "error"):
+            known_issue_matches = match_failure(
+                nodeid, failure_message, _known_issue_area_token(nodeid, area), FINDINGS_PATH
+            )
+
+        trace_summary = None
+        trace_rel = test.get("trace")
+        if outcome in ("fail", "error") and trace_rel:
+            trace_path = REPO_ROOT / "results" / trace_rel
+            try:
+                trace_summary = extract_trace_summary(trace_path)
+            except Exception as exc:
+                # Best-effort, same defensive posture as failure_review.py —
+                # a bad/missing trace must never break the whole endpoint.
+                trace_summary = f"(trace could not be read: {exc})"
+
+        rows = list_runs_for_nodeid(nodeid, HISTORY_DIR) if nodeid else []
+        if nodeid and nodeid not in sibling_runs:
+            sibling_runs[nodeid] = [
+                {"run_code": r["run_code"], "timestamp": r["timestamp"], "outcome": r["outcome"]}
+                for r in rows
+                if r["run_code"] != run_code
+            ][:SIBLING_RUN_LIMIT]
+        if rows and _is_flaky(rows):
+            any_flaky = True
+
+        tests_out.append(
+            {
+                "nodeid": nodeid,
+                "outcome": outcome,
+                "duration": test.get("duration", 0.0),
+                "failure_message": failure_message,
+                "screenshot": test.get("screenshot"),
+                "trace": trace_rel,
+                "area": area,
+                "known_issue_matches": known_issue_matches,
+                "trace_summary": trace_summary,
+            }
+        )
+
+    return {
+        "run_code": run.get("run_code"),
+        "run_id": run.get("run_id"),
+        "timestamp": run.get("timestamp"),
+        "git_sha": run.get("git_sha"),
+        "git_branch": run.get("git_branch"),
+        "markers": run.get("markers"),
+        "duration": run.get("duration"),
+        "batch_id": run.get("batch_id"),
+        "tests": tests_out,
+        "sibling_runs": sibling_runs,
+        "flaky": any_flaky,
+    }
+
+
+def _matches_catalog_nodeid(catalog_nodeid: str, history_nodeid: str) -> bool:
+    """Same nodeid-matching rule as `runner.py`'s `_find_test_result`: a
+    catalog nodeid is built from source (no browser-parametrize suffix —
+    see catalog.py), but the nodeid pytest-playwright actually records in
+    history always carries one, e.g. "...::test_x" vs "...::test_x[chromium]".
+    Exact match still allowed as a fallback for an unparametrized test."""
+    return history_nodeid == catalog_nodeid or history_nodeid.startswith(catalog_nodeid + "[")
+
+
+def _rows_for_catalog_nodeid(
+    catalog_nodeid: str, rows_by_nodeid: dict[str, list[dict]]
+) -> list[dict]:
+    matched = [
+        row
+        for history_nodeid, rows in rows_by_nodeid.items()
+        if _matches_catalog_nodeid(catalog_nodeid, history_nodeid)
+        for row in rows
+    ]
+    matched.sort(key=lambda r: r["timestamp"], reverse=True)
+    return matched
+
+
+@app.get("/api/overview")
+def get_overview():
+    groups = discover_groups()
+    confirmed_issues = parse_confirmed_issues(FINDINGS_PATH)
+    rows_by_nodeid: dict[str, list[dict]] = defaultdict(list)
+    for row in list_test_runs(HISTORY_DIR):
+        if row["nodeid"]:
+            rows_by_nodeid[row["nodeid"]].append(row)
+
+    areas = []
+    for group in groups:
+        nodeids = group.run_all_nodeids
+        # rows_by_nodeid is keyed by the *recorded* (possibly
+        # browser-suffixed) nodeid; catalog nodeids never carry that
+        # suffix, so look each one up via _matches_catalog_nodeid rather
+        # than a direct dict hit (see runner.py's _find_test_result).
+        per_nid_rows = {nid: _rows_for_catalog_nodeid(nid, rows_by_nodeid) for nid in nodeids}
+        group_rows = [r for rows in per_nid_rows.values() for r in rows]
+
+        pass_rate = None
+        last_run = None
+        if group_rows:
+            pass_count = sum(1 for r in group_rows if r["outcome"] == "pass")
+            pass_rate = round(pass_count / len(group_rows), 4)
+            latest = max(group_rows, key=lambda r: r["timestamp"])
+            last_run = {
+                "run_code": latest["run_code"],
+                "timestamp": latest["timestamp"],
+                "outcome": latest["outcome"],
+            }
+
+        flaky_tests = [nid for nid, rows in per_nid_rows.items() if _is_flaky(rows)]
+
+        area_tokens = _group_area_tokens(group.id)
+        confirmed_issue_count = sum(
+            1 for issue in confirmed_issues if issue.get("area") in area_tokens
+        )
+
+        areas.append(
+            {
+                "id": group.id,
+                "label": group.label,
+                "pass_rate": pass_rate,
+                "last_run": last_run,
+                "flaky_tests": flaky_tests,
+                "confirmed_issue_count": confirmed_issue_count,
+            }
+        )
+
+    return {"areas": areas}
 
 
 class NoCacheStaticFiles(StaticFiles):

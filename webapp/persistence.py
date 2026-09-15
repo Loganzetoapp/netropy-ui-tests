@@ -24,6 +24,7 @@ class IterationResult:
     failure_message: Optional[str]
     screenshot: Optional[str]
     trace: Optional[str]
+    run_code: Optional[str] = None
 
 
 @dataclass
@@ -31,6 +32,16 @@ class BatchResult:
     batch_id: str
     nodeid: str
     iterations: list[IterationResult] = field(default_factory=list)
+    # Session-level fields from the FIRST run encountered for this batch —
+    # same "set once, at creation" convention as nodeid above. A batch can
+    # cover several iterations/history files (one per repeat_count run),
+    # each with its own run_code (see IterationResult.run_code for the
+    # per-iteration code); these represent the batch as a whole rather
+    # than any single iteration.
+    run_code: Optional[str] = None
+    git_sha: Optional[str] = None
+    git_branch: Optional[str] = None
+    markers: Optional[str] = None
 
     @property
     def pass_count(self) -> int:
@@ -65,7 +76,15 @@ def list_batches(history_dir: Path = HISTORY_DIR) -> list[BatchResult]:
             continue
         for test in run.get("tests", []):
             batch = batches.setdefault(
-                batch_id, BatchResult(batch_id=batch_id, nodeid=test["nodeid"])
+                batch_id,
+                BatchResult(
+                    batch_id=batch_id,
+                    nodeid=test["nodeid"],
+                    run_code=run.get("run_code"),
+                    git_sha=run.get("git_sha"),
+                    git_branch=run.get("git_branch"),
+                    markers=run.get("markers"),
+                ),
             )
             batch.iterations.append(
                 IterationResult(
@@ -76,6 +95,7 @@ def list_batches(history_dir: Path = HISTORY_DIR) -> list[BatchResult]:
                     failure_message=test.get("failure_message"),
                     screenshot=test.get("screenshot"),
                     trace=test.get("trace"),
+                    run_code=run.get("run_code"),
                 )
             )
     result = list(batches.values())
@@ -83,3 +103,51 @@ def list_batches(history_dir: Path = HISTORY_DIR) -> list[BatchResult]:
         batch.iterations.sort(key=lambda i: i.timestamp)
     result.sort(key=lambda b: b.started_at, reverse=True)
     return result
+
+
+def list_test_runs(history_dir: Path = HISTORY_DIR) -> list[dict]:
+    """Flatten every history file into one row per (history file, test)
+    pair: `run_code`, `run_id`, `timestamp`, `nodeid`, `outcome`. Unlike
+    `list_batches()`, this includes every history file — plain CLI runs
+    with no `batch_id` too — since sibling-run/flaky-signal/area-rollup
+    logic needs the full picture, not just webapp-triggered ones. Sorted
+    newest-first by timestamp. This is the raw per-test-run view later
+    endpoints (run-detail siblings, the overview rollup) fold over."""
+    rows = []
+    for run in _load_history(history_dir):
+        for test in run.get("tests", []):
+            rows.append(
+                {
+                    "run_code": run.get("run_code"),
+                    "run_id": run.get("run_id"),
+                    "timestamp": run.get("timestamp", ""),
+                    "nodeid": test.get("nodeid"),
+                    "outcome": test.get("outcome"),
+                }
+            )
+    rows.sort(key=lambda r: r["timestamp"], reverse=True)
+    return rows
+
+
+def list_runs_for_nodeid(nodeid: str, history_dir: Path = HISTORY_DIR) -> list[dict]:
+    """`list_test_runs()` rows for one nodeid only, newest-first — the
+    "other runs of this test" chain and the N-of-last-M flaky signal both
+    build on this."""
+    return [r for r in list_test_runs(history_dir) if r["nodeid"] == nodeid]
+
+
+def get_run(run_code: str, history_dir: Path = HISTORY_DIR) -> Optional[dict]:
+    """Load the single raw history JSON dict whose `run_code` matches, or
+    None if no history file carries that code (unknown code, or a
+    pre-backfill file that never got one). Linear scan over
+    `_load_history` — this repo's history directory is small and local,
+    no index is worth the complexity.
+
+    Returns the raw dict close to what's on disk (run_code, run_id,
+    timestamp, git_sha, git_branch, markers, duration, tests, batch_id)
+    rather than the more processed BatchResult — this is the read
+    primitive a later phase's `GET /api/runs/{run_code}` builds on."""
+    for run in _load_history(history_dir):
+        if run.get("run_code") == run_code:
+            return run
+    return None
