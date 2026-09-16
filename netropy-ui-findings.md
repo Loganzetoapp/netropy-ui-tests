@@ -889,3 +889,43 @@ Action sequence:
 ```
 Screenshot: `webapp-artifacts/94e0cd94-93bc-41f0-8164-519881c01827/3/test-failed-1.png`
 Trace: `webapp-artifacts/94e0cd94-93bc-41f0-8164-519881c01827/3/trace.zip`
+
+### 2026-09-16 22:01 UTC — tests/t10_t12_lifecycle/test_t10_edit_config_while_active.py::test_t10_edit_config_while_active
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 16, 2026 15:01:59 UTC Unit clock NTP server: not configured (sandbox) Sep 16, 2026 15:01:59 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 46%
+- text: 46 %
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-EditLive"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/3/release -> 403 Forbidden
+```
+Trace: `webapp-artifacts/57fb3cfe-efa6-447e-bed8-22cc7deb64ba/1/trace.zip`
