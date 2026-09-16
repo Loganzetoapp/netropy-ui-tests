@@ -360,6 +360,30 @@ def test_overview_counts_confirmed_issues_by_area(client):
     assert areas["t1_auth"]["confirmed_issue_count"] == 0
 
 
+def test_overview_status_breakdown_by_area(client):
+    """FIXTURE_FINDINGS' one issue has no "Status:" line at all, so
+    classify_status defaults it to the least-resolved bucket, "open" —
+    the status_breakdown for its area must reflect that, and an area
+    with zero issues must still report all-zero buckets rather than
+    omitting the field."""
+    c, _ = client
+    resp = c.get("/api/overview")
+    areas = {a["id"]: a for a in resp.json()["areas"]}
+    assert areas["t10_t12_lifecycle"]["status_breakdown"] == {
+        "open": 1,
+        "investigating": 0,
+        "fixed": 0,
+    }
+    assert areas["t1_auth"]["status_breakdown"] == {
+        "open": 0,
+        "investigating": 0,
+        "fixed": 0,
+    }
+    # confirmed_issue_count always equals the sum of the three buckets.
+    for area in areas.values():
+        assert area["confirmed_issue_count"] == sum(area["status_breakdown"].values())
+
+
 def test_overview_handles_missing_findings_file(monkeypatch, tmp_path):
     history_dir = tmp_path / "history"
     monkeypatch.setattr(app_module, "HISTORY_DIR", history_dir)
@@ -370,3 +394,7 @@ def test_overview_handles_missing_findings_file(monkeypatch, tmp_path):
     resp = c.get("/api/overview")
     assert resp.status_code == 200
     assert all(a["confirmed_issue_count"] == 0 for a in resp.json()["areas"])
+    assert all(
+        a["status_breakdown"] == {"open": 0, "investigating": 0, "fixed": 0}
+        for a in resp.json()["areas"]
+    )

@@ -9,7 +9,9 @@
 </head>
 <body>
   <header class="topbar">
-    <img src="/static/apposite-logo.png" alt="Apposite Technologies" class="logo">
+    <button type="button" id="logo-home" class="logo-home" aria-label="Go to Overview">
+      <img src="/static/apposite-logo.png" alt="Apposite Technologies" class="logo">
+    </button>
     <h1>Netropy Test Dashboard</h1>
   </header>
 
@@ -30,7 +32,7 @@
       <h2 id="run-modal-title">Run test</h2>
       <p id="run-modal-warning" class="stateful-warning" hidden></p>
       <label class="field" id="run-modal-count-field">
-        How many times?
+        <span id="run-modal-count-label">How many times?</span>
         <input type="number" id="run-modal-count" min="1" value="1">
       </label>
       <label class="field-checkbox">

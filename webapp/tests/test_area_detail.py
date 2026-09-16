@@ -79,13 +79,36 @@ FIXTURE_FINDINGS = """# Findings
 ## Confirmed product issues
 
 ### Testbed activation returns 502 Bad Gateway for long names
-Activation of a testbed fails with a 502 Bad Gateway response when the
-testbed name is too long. Confirmed on T10 lifecycle tests during
-activation.
+Activation of a testbed fails with a 502 Bad Gateway response whenever
+the testbed name is 16 characters or longer. Every activation attempt
+for an over-length name returns 502 permanently, while a name of 15
+characters or fewer activates cleanly every time. Confirmed on T10
+lifecycle tests during activation. The wizard shows no error toast when
+activation fails, leaving the Apply button stuck silently on the
+addressing step.
 
 ### Copy UID silently does nothing
 No area token in this one at all — should never attach to any area.
 """
+
+# A failure message rich enough in real shared vocabulary with the finding
+# above to clear known_issues.STRICT_OVERLAP_FLOOR — the area-detail
+# endpoint's cross-referencing now runs in strict mode (see app.py), so a
+# fixture exercising it needs a genuinely substantial overlap, not just a
+# couple of incidental words riding the area bonus like the old fixture did.
+RELEVANT_FAILURE_MESSAGE = (
+    "502 Bad Gateway returned during testbed activation for an "
+    "over-length name; wizard Apply button stuck silently with no "
+    "error toast"
+)
+# A failure sharing nothing with the finding but generic Playwright/page
+# boilerplate and the area token itself — exactly the shape of match that
+# used to flood connected_tests under the old loose floor.
+BOILERPLATE_FAILURE_MESSAGE = (
+    'AssertionError: Locator expected to be visible\n'
+    '- img "Apposite Technologies"\n'
+    '- text: Netropy Traffic Generator | Sign in'
+)
 
 
 def _write_history(
@@ -150,6 +173,7 @@ def test_area_with_no_issues_and_no_runs_is_empty_but_valid(client):
     assert data["last_run"] is None
     assert data["flaky_tests"] == []
     assert data["confirmed_issue_count"] == 0
+    assert data["status_breakdown"] == {"open": 0, "investigating": 0, "fixed": 0}
     assert data["known_issues"] == []
     assert len(data["tests"]) == 1
     test = data["tests"][0]
@@ -182,7 +206,7 @@ def test_area_issue_lists_its_connected_tests(client):
         "fail",
         "2026-01-01T00:00:00Z",
         "RUN-1",
-        failure_message="502 Bad Gateway activation failed for testbed name",
+        failure_message=RELEVANT_FAILURE_MESSAGE,
     )
     # A passing run of the same test must never show up as "connected" —
     # only fail/error runs are cross-referenced against known issues.
@@ -202,7 +226,7 @@ def test_area_issue_lists_its_connected_tests(client):
         "fail",
         "2026-01-01T00:02:00Z",
         "RUN-3",
-        failure_message="502 Bad Gateway activation failed for testbed name",
+        failure_message=RELEVANT_FAILURE_MESSAGE,
     )
 
     resp = c.get("/api/areas/t10_t12_lifecycle")
@@ -219,6 +243,48 @@ def test_area_issue_lists_its_connected_tests(client):
     assert connected["nodeid"] == T10_NODEID
     assert connected["run_code"] == "RUN-1"
     assert connected["outcome"] == "fail"
+
+
+def test_area_cross_referencing_is_strict_and_drops_boilerplate_only_matches(client):
+    """The bug this whole change fixes: against a history mixing one
+    genuinely relevant failure with several failures that share nothing
+    with the finding but generic Playwright/page boilerplate and the area
+    token, connected_tests must include only the genuine one — not the
+    near-blanket match the old loose floor produced for every failure in
+    the area."""
+    c, history_dir = client
+    _write_history(
+        history_dir,
+        "run1",
+        T10_NODEID,
+        "fail",
+        "2026-01-01T00:00:00Z",
+        "RUN-1",
+        failure_message=RELEVANT_FAILURE_MESSAGE,
+    )
+    for i, run_id in enumerate(("run2", "run3", "run4"), start=2):
+        _write_history(
+            history_dir,
+            run_id,
+            T10B_NODEID,
+            "fail",
+            f"2026-01-01T00:0{i}:00Z",
+            f"RUN-{i}",
+            failure_message=BOILERPLATE_FAILURE_MESSAGE,
+        )
+
+    resp = c.get("/api/areas/t10_t12_lifecycle")
+    assert resp.status_code == 200
+    data = resp.json()
+    issue = next(
+        i
+        for i in data["known_issues"]
+        if i["title"] == "Testbed activation returns 502 Bad Gateway for long names"
+    )
+    assert [c["run_code"] for c in issue["connected_tests"]] == ["RUN-1"]
+    # FIXTURE_FINDINGS' entry has no explicit "Status:" line, so
+    # classify_status defaults it to the least-resolved bucket.
+    assert issue["status"] == "open"
 
 
 def test_area_tests_list_reflects_latest_run_and_pass_rate(client):
@@ -257,3 +323,4 @@ def test_area_rollup_matches_overview_for_same_area(client):
     assert area_detail["last_run"] == overview_area["last_run"]
     assert area_detail["flaky_tests"] == overview_area["flaky_tests"]
     assert area_detail["confirmed_issue_count"] == overview_area["confirmed_issue_count"]
+    assert area_detail["status_breakdown"] == overview_area["status_breakdown"]

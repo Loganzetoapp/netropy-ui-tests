@@ -182,6 +182,82 @@ def test_failing_run_is_queued_for_review_automatically(tmp_path):
     assert "Failure message: boom" in content
 
 
+class _FakeReviewTextBlock:
+    def __init__(self, text):
+        self.type = "text"
+        self.text = text
+
+
+class _FakeReviewResponse:
+    def __init__(self, text):
+        self.content = [_FakeReviewTextBlock(text)]
+
+
+class _FakeReviewMessages:
+    def __init__(self, response_text=None, raise_exc=None):
+        self.response_text = response_text
+        self.raise_exc = raise_exc
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.raise_exc:
+            raise self.raise_exc
+        return _FakeReviewResponse(self.response_text)
+
+
+class _FakeReviewClient:
+    def __init__(self, response_text=None, raise_exc=None):
+        self.messages = _FakeReviewMessages(response_text, raise_exc)
+
+
+def test_failing_run_uses_automatic_review_when_enabled(tmp_path):
+    history_dir = tmp_path / "history"
+    findings_path = tmp_path / "netropy-ui-findings.md"
+    runner = TestRunner(
+        repo_root=tmp_path,
+        history_dir=history_dir,
+        subprocess_run=_fake_subprocess_run_factory(history_dir, "fail"),
+        findings_path=findings_path,
+    )
+    client = _FakeReviewClient(response_text="The 403 suggests a real permission bug.")
+    runner.enable_failure_review(client)
+
+    batch_id = runner.start("tests/x.py::test_x", "hardware_free", 1)
+    list(runner.events(batch_id))
+
+    assert len(client.messages.calls) == 1
+    content = findings_path.read_text()
+    assert "## Dashboard failure reviews (automatic)" in content
+    assert "The 403 suggests a real permission bug." in content
+    # never falls through to the raw queue when the API call succeeded
+    assert "**Status:** pending review" not in content
+
+
+def test_failing_run_falls_back_to_pending_queue_when_review_api_call_fails(tmp_path):
+    """A bad key, a network error, a rate limit — any API failure must not
+    lose the evidence. It should land in the same free pending-review
+    queue as if automatic review had never been enabled at all."""
+    history_dir = tmp_path / "history"
+    findings_path = tmp_path / "netropy-ui-findings.md"
+    runner = TestRunner(
+        repo_root=tmp_path,
+        history_dir=history_dir,
+        subprocess_run=_fake_subprocess_run_factory(history_dir, "fail"),
+        findings_path=findings_path,
+    )
+    client = _FakeReviewClient(raise_exc=RuntimeError("401 unauthorized"))
+    runner.enable_failure_review(client)
+
+    batch_id = runner.start("tests/x.py::test_x", "hardware_free", 1)
+    list(runner.events(batch_id))
+
+    content = findings_path.read_text()
+    assert "**Status:** pending review" in content
+    assert "Failure message: boom" in content
+    assert "## Dashboard failure reviews (automatic)" not in content
+
+
 def test_passing_run_is_not_queued_for_review(tmp_path):
     history_dir = tmp_path / "history"
     findings_path = tmp_path / "netropy-ui-findings.md"

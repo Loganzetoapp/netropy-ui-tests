@@ -25,7 +25,13 @@ from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from webapp.catalog import TestGroup, discover_groups
-from webapp.known_issues import match_failure, parse_confirmed_issues
+from webapp.known_issues import (
+    STATUS_FIXED,
+    STATUS_INVESTIGATING,
+    STATUS_OPEN,
+    match_failure,
+    parse_confirmed_issues,
+)
 from webapp.persistence import HISTORY_DIR, get_run, list_batches, list_runs_for_nodeid, list_test_runs
 from webapp.runner import AlreadyRunningError, IterationEvent, TestRunner
 from webapp.trace_summary import extract_trace_summary
@@ -386,6 +392,18 @@ def _rows_by_nodeid() -> dict[str, list[dict]]:
     return rows_by_nodeid
 
 
+def _status_breakdown(issues: list[dict]) -> dict:
+    """`{"open": n, "investigating": n, "fixed": n}` for a list of
+    confirmed-issue dicts (each carrying a `status` from
+    `known_issues.classify_status`). Always all three keys, even when a
+    bucket is empty, so the frontend never has to guess a default."""
+    breakdown = {STATUS_OPEN: 0, STATUS_INVESTIGATING: 0, STATUS_FIXED: 0}
+    for issue in issues:
+        status = issue.get("status", STATUS_OPEN)
+        breakdown[status] = breakdown.get(status, 0) + 1
+    return breakdown
+
+
 def _compute_area_rollup(
     group: TestGroup, rows_by_nodeid: dict[str, list[dict]], confirmed_issues: list[dict]
 ) -> dict:
@@ -416,9 +434,7 @@ def _compute_area_rollup(
     flaky_tests = [nid for nid, rows in per_nid_rows.items() if _is_flaky(rows)]
 
     area_tokens = _group_area_tokens(group.id)
-    confirmed_issue_count = sum(
-        1 for issue in confirmed_issues if issue.get("area") in area_tokens
-    )
+    area_issues = [issue for issue in confirmed_issues if issue.get("area") in area_tokens]
 
     return {
         "id": group.id,
@@ -426,7 +442,11 @@ def _compute_area_rollup(
         "pass_rate": pass_rate,
         "last_run": last_run,
         "flaky_tests": flaky_tests,
-        "confirmed_issue_count": confirmed_issue_count,
+        # Kept for backward compatibility (webapp/tests/test_run_detail_and_overview.py
+        # and test_area_detail.py both assert on this) — always equals the
+        # sum of status_breakdown's three buckets.
+        "confirmed_issue_count": len(area_issues),
+        "status_breakdown": _status_breakdown(area_issues),
     }
 
 
@@ -503,8 +523,14 @@ def get_area_detail(area_id: str):
                 for row in rows_by_test_nodeid.get(t.nodeid, []):
                     if row["outcome"] not in ("fail", "error"):
                         continue
+                    # strict=True: this loop cross-references every
+                    # failed/errored run in the area against every one of
+                    # the area's confirmed issues — the loose default
+                    # floor (fine for one-at-a-time review-queue
+                    # suggestions) produces near-blanket matches at that
+                    # scale. See known_issues.match_failure's docstring.
                     matches = match_failure(
-                        t.nodeid, row.get("failure_message"), token, FINDINGS_PATH
+                        t.nodeid, row.get("failure_message"), token, FINDINGS_PATH, strict=True
                     )
                     if any(m["title"] == issue["title"] for m in matches):
                         connected.append(
@@ -516,7 +542,12 @@ def get_area_detail(area_id: str):
                             }
                         )
         issues_out.append(
-            {"title": issue["title"], "body": issue["body"], "connected_tests": connected}
+            {
+                "title": issue["title"],
+                "body": issue["body"],
+                "status": issue["status"],
+                "connected_tests": connected,
+            }
         )
 
     return {
@@ -526,6 +557,7 @@ def get_area_detail(area_id: str):
         "last_run": rollup["last_run"],
         "flaky_tests": rollup["flaky_tests"],
         "confirmed_issue_count": rollup["confirmed_issue_count"],
+        "status_breakdown": rollup["status_breakdown"],
         "known_issues": issues_out,
         "tests": tests_out,
     }
@@ -663,6 +695,13 @@ if __name__ == "__main__":
         lan_ip = _guess_lan_ip()
         if lan_ip:
             print(f"  From another machine on the network: http://{lan_ip}:{port}/", flush=True)
+
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
+    if anthropic_key:
+        import anthropic
+
+        runner.enable_failure_review(anthropic.Anthropic(api_key=anthropic_key))
+        print("Automatic Claude failure review: enabled (see netropy-ui-findings.md)", flush=True)
 
     # Passing the app object directly (not the "webapp.app:app" string form)
     # avoids uvicorn re-importing this module under a different name — that

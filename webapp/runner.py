@@ -201,6 +201,22 @@ class TestRunner:
         self._active: Optional[_Batch] = None
         self._batches: dict[str, _Batch] = {}
         self._findings_path = findings_path or (repo_root / "netropy-ui-findings.md")
+        # None = disabled (the default: raw pending-review queue, no API
+        # call). Deliberately not read from ANTHROPIC_API_KEY here — see
+        # webapp/app.py's __main__ block, which enables this after
+        # load_dotenv() runs, the same pattern used for the auth
+        # middleware, so importing this module never depends on ambient
+        # .env state.
+        self._review_client = None
+
+    def enable_failure_review(self, client) -> None:
+        """Turn on automatic Claude review of failed/error iterations —
+        each one gets its evidence (screenshot + trace summary) sent to
+        `client` and the resulting finding appended straight to
+        netropy-ui-findings.md, no Claude Code session required. `client`
+        is any object exposing `.messages.create(...)` shaped like
+        `anthropic.Anthropic()`."""
+        self._review_client = client
 
     def start(
         self, nodeid: str, marker: str, repeat_count: int, headed: bool = False
@@ -294,14 +310,34 @@ class TestRunner:
     def _queue_failure_review(
         self, nodeid: str, detail: Optional[str], test_result: Optional[dict]
     ) -> None:
-        """Best-effort: log this failed iteration's evidence into
-        netropy-ui-findings.md's pending-review queue (no API call — see
-        failure_review.py). Any failure here (malformed trace, disk
-        error, ...) is logged and swallowed — a failure logging a failure
-        must never itself break run reporting."""
+        """Best-effort: get this failed iteration's evidence into
+        netropy-ui-findings.md. When automatic review is enabled (see
+        enable_failure_review), that means asking Claude for a written
+        finding; otherwise it means the raw pending-review queue (no API
+        call — see failure_review.py). Any failure here (malformed trace,
+        disk error, bad API key, network error, ...) is logged and
+        swallowed — a failure logging a failure must never itself break
+        run reporting. If the API call specifically fails, this falls
+        back to the raw queue rather than losing the evidence outright."""
         screenshot_rel = test_result.get("screenshot") if test_result else None
         trace_rel = test_result.get("trace") if test_result else None
         trace_path = (self._repo_root / "results" / trace_rel) if trace_rel else None
+
+        if self._review_client is not None:
+            screenshot_path = (
+                (self._repo_root / "results" / screenshot_rel) if screenshot_rel else None
+            )
+            try:
+                review_text = failure_review.review_failure(
+                    nodeid, detail, screenshot_path, trace_path, self._review_client
+                )
+                failure_review.append_reviewed_finding(
+                    self._findings_path, nodeid, review_text, screenshot_rel, trace_rel
+                )
+                return
+            except Exception as exc:
+                print(f"webapp runner: automated failure review failed, falling back to the pending-review queue: {exc}")
+
         try:
             failure_review.queue_pending_review(
                 self._findings_path, nodeid, detail, screenshot_rel, trace_rel, trace_path

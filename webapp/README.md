@@ -53,23 +53,41 @@ login would let anyone who can reach the machine do that. The one-test-at-a-
 time rule is enforced server-side regardless of how many people are looking
 at it, same as running it solo.
 
-## Failure review queue
+## Failure review
 
-Every dashboard-triggered test failure is automatically logged to
-`netropy-ui-findings.md`, under "Dashboard failures — pending review" —
-timestamped, with the failure message, a summary extracted from its
-Playwright trace (action sequence, JS/console errors, any non-2xx network
-responses), and links to the screenshot/trace. No API key, no cost, no
-extra setup — always on.
+Every dashboard-triggered test failure gets its evidence captured
+automatically — a summary extracted from its Playwright trace (action
+sequence, JS/console errors, any non-2xx network responses) plus the
+failure screenshot. What happens with that evidence depends on whether
+`ANTHROPIC_API_KEY` is set in `.env`:
 
-These entries are raw evidence, not yet reviewed. To actually review one:
-ask Claude, in a Claude Code session in this repo, to review the pending
-entries — it reads the trace/screenshot the same way it would if you
-handed it the file directly, then either promotes a real one into
-"Confirmed product issues" above (with what makes it confirmed) or notes
-why it isn't (test/selector issue, inconclusive, etc.), and marks the
-entry reviewed. The **Findings** tab in the dashboard is the easiest way
-to see what's piled up in the queue between review sessions.
+**Unset (default) — free pending-review queue.** The evidence is logged
+straight into `netropy-ui-findings.md`, under "Dashboard failures —
+pending review" — timestamped, with links to the screenshot/trace. No
+API key, no cost, no extra setup, always on. These entries are raw
+evidence, not yet reviewed — to actually review one, ask Claude in a
+Claude Code session in this repo: it reads the trace/screenshot the same
+way it would if you handed it the file directly, then either promotes a
+real one into "Confirmed product issues" above (with what makes it
+confirmed) or notes why it isn't (test/selector issue, inconclusive,
+etc.), and marks the entry reviewed.
+
+**Set — automatic review, no session required.** The same evidence is
+sent directly to Claude (Haiku 4.5 — a few cents a day at typical failure
+volume), and the resulting evidence-grounded finding is appended straight
+to `netropy-ui-findings.md` under "Dashboard failure reviews (automatic)"
+— nobody has to be around interactively reviewing a queue for findings to
+show up. This is what makes an unattended, remote-hosted dashboard
+usable without a human/Claude session babysitting it. These are still
+single-run automated reads, kept in their own section rather than mixed
+into the manually-reproduced "Confirmed product issues" section — worth
+a glance before fully trusting one, same as any single-run read. If the
+API call itself fails (bad key, network error, rate limit), that
+iteration falls back to the free pending-review queue automatically
+rather than losing the evidence.
+
+The **Findings** tab in the dashboard is the easiest way to see either
+mode's output without opening the file in an editor.
 
 ## Design
 

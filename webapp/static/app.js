@@ -1,4 +1,6 @@
-const state = { catalog: null, liveStatus: {}, batchRunning: false };
+// selectedTests: nodeid -> safety_marker, so "Run selected" can compute a
+// stateful-count warning without a second lookup against state.catalog.
+const state = { catalog: null, liveStatus: {}, batchRunning: false, selectedTests: new Map() };
 
 async function fetchJSON(url, opts) {
   const res = await fetch(url, opts);
@@ -42,14 +44,63 @@ function selectModule(module, btn) {
 
 async function renderTrafficGenerator(panel) {
   panel.innerHTML = "<p>Loading tests…</p>";
+  // A fresh catalog render always starts from a clean slate — checkboxes
+  // below are unchecked by construction, so any nodeids left in the map
+  // from a previous render (e.g. the user navigated away mid-selection)
+  // would otherwise silently disagree with what's on screen.
+  state.selectedTests.clear();
   try {
     const { groups } = await fetchJSON("/api/catalog");
     state.catalog = groups;
-    panel.innerHTML = groups.map(renderGroup).join("");
+    panel.innerHTML = `
+      <div class="filter-field">
+        <input type="text" id="tests-filter" class="filter-input" placeholder="Search tests…" aria-label="Search tests">
+      </div>
+      <div id="selection-bar" class="selection-bar" hidden>
+        <span id="selection-count"></span>
+        <div class="selection-bar-actions">
+          <button type="button" class="btn-outline" id="selection-clear">Clear</button>
+          <button type="button" class="btn-primary" id="selection-run">Run selected</button>
+        </div>
+      </div>
+      <p id="tests-filter-empty" class="test-desc" hidden>No tests match.</p>
+      ${groups.map(renderGroup).join("")}`;
     attachTestRowHandlers();
+    attachTestsFilter();
   } catch (err) {
     panel.innerHTML = `<p class="test-desc">Couldn't load tests: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+// Client-side filter for the Tests tab — matches test name, nodeid, and
+// short/full description against the query (case-insensitive substring).
+// Toggles [hidden] on non-matching rows rather than re-rendering the DOM
+// tree, and hides a whole group section when none of its rows remain
+// visible (a "T5 — Ports" header with nothing under it reads as broken).
+function attachTestsFilter() {
+  const input = document.getElementById("tests-filter");
+  const emptyMsg = document.getElementById("tests-filter-empty");
+  if (!input) return;
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    let anyVisible = false;
+    document.querySelectorAll(".group").forEach((group) => {
+      let groupHasVisible = false;
+      group.querySelectorAll(".test-row").forEach((row) => {
+        const name = row.querySelector(".test-name")?.textContent || "";
+        const shortDesc = row.querySelector(".test-desc")?.textContent || "";
+        const nodeid = row.dataset.nodeid || "";
+        const fullDesc = row.dataset.fullDescription || "";
+        const haystack = `${name} ${nodeid} ${shortDesc} ${fullDesc}`.toLowerCase();
+        const match = !q || haystack.includes(q);
+        row.hidden = !match;
+        if (match) groupHasVisible = true;
+      });
+      group.hidden = !groupHasVisible;
+      if (groupHasVisible) anyVisible = true;
+    });
+    emptyMsg.hidden = anyVisible;
+  });
 }
 
 function renderGroup(group) {
@@ -85,9 +136,12 @@ function safetyPill(marker) {
 function renderTestRow(test, file) {
   return `
     <div class="test-row" data-nodeid="${test.nodeid}" data-full-description="${escapeAttr(file.full_description)}">
-      <div>
-        <div class="test-name">${test.name}</div>
-        <div class="test-desc">${file.short_description}</div>
+      <div class="test-row-main">
+        <input type="checkbox" class="test-select" data-nodeid="${test.nodeid}" data-marker="${test.safety_marker}" aria-label="Select ${escapeAttr(test.name)}">
+        <div>
+          <div class="test-name">${test.name}</div>
+          <div class="test-desc">${file.short_description}</div>
+        </div>
       </div>
       <div class="test-row-actions">
         <span class="pill" data-status-for="${test.nodeid}"></span>
@@ -124,7 +178,7 @@ function escapeHtml(s) {
 function attachTestRowHandlers() {
   document.querySelectorAll(".test-row").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest(".run-btn")) return;
+      if (e.target.closest(".run-btn") || e.target.closest(".test-select")) return;
       toggleDetail(row);
     });
   });
@@ -149,9 +203,50 @@ function attachTestRowHandlers() {
       }
     });
   });
+  document.querySelectorAll(".test-select").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      const nodeid = cb.dataset.nodeid;
+      if (cb.checked) state.selectedTests.set(nodeid, cb.dataset.marker);
+      else state.selectedTests.delete(nodeid);
+      updateSelectionBar();
+    });
+  });
+  document.getElementById("selection-clear")?.addEventListener("click", () => {
+    state.selectedTests.clear();
+    document.querySelectorAll(".test-select").forEach((cb) => (cb.checked = false));
+    updateSelectionBar();
+  });
+  document.getElementById("selection-run")?.addEventListener("click", () => {
+    const nodeids = Array.from(state.selectedTests.keys());
+    const statefulCount = Array.from(state.selectedTests.values()).filter(
+      (marker) => marker === "stateful"
+    ).length;
+    openRunSelectedModal(nodeids, statefulCount, document.getElementById("selection-run"));
+  });
   // A batch may already be running (e.g. the user switched tabs and back
   // mid-run) — newly attached buttons need to reflect that immediately.
   setRunControlsEnabled(!state.batchRunning);
+}
+
+// Reflects state.selectedTests onto the selection bar (count text,
+// visibility) — called on every checkbox change so the bar never lags
+// behind what's actually checked.
+function updateSelectionBar() {
+  const bar = document.getElementById("selection-bar");
+  if (!bar) return;
+  const count = state.selectedTests.size;
+  bar.hidden = count === 0;
+  document.getElementById("selection-count").textContent =
+    `${count} test${count === 1 ? "" : "s"} selected`;
+}
+
+// Selection is a one-shot batch of independent single-test runs, same
+// mental model as "Run all in group" — once confirmed, it's spent; the
+// bar goes away and the next selection starts clean.
+function clearTestSelection() {
+  state.selectedTests.clear();
+  document.querySelectorAll(".test-select").forEach((cb) => (cb.checked = false));
+  updateSelectionBar();
 }
 
 function toggleDetail(row) {
@@ -167,9 +262,11 @@ function toggleDetail(row) {
   row.after(panel);
 }
 
-// modalMode distinguishes the two things this one modal now confirms:
-// "single" (openRunModal — repeat-count field, calls startRun) and
-// "group" (openRunAllModal — no repeat count, calls runAllInGroup).
+// modalMode distinguishes the three things this one modal now confirms:
+// "single" (openRunModal — repeat-count field, calls startRun), "group"
+// (openRunAllModal — no repeat count, every test runs once, calls
+// runAllInGroup), and "selected" (openRunSelectedModal — repeat count
+// applies to EACH selected test, calls runSelectedTests).
 let modalMode = null;
 let modalNodeid = null;
 let modalGroupNodeids = null;
@@ -184,6 +281,7 @@ function openRunModal(nodeid, marker, triggerEl) {
   warning.textContent = "⚠ This generates real network traffic on the lab hardware.";
   warning.hidden = marker !== "stateful";
   document.getElementById("run-modal-count-field").hidden = false;
+  document.getElementById("run-modal-count-label").textContent = "How many times?";
   document.getElementById("run-modal-confirm").textContent = "Run";
   const countInput = document.getElementById("run-modal-count");
   countInput.value = 1;
@@ -191,6 +289,37 @@ function openRunModal(nodeid, marker, triggerEl) {
   document.getElementById("run-modal").hidden = false;
   // Land keyboard focus in the field people are most likely to change,
   // with its default value pre-selected so typing overwrites it.
+  countInput.focus();
+  countInput.select();
+}
+
+// Same modal as openRunModal, but for a cross-group set of individually
+// checked tests rather than one nodeid — the repeat-count field stays
+// visible (unlike "group" mode) since it's the whole point here: "how
+// many times should each selected test run", not a single shared count
+// for one test.
+function openRunSelectedModal(nodeids, statefulCount, triggerEl) {
+  modalMode = "selected";
+  modalGroupNodeids = nodeids;
+  modalTriggerEl = triggerEl || document.activeElement;
+  document.getElementById("run-modal-title").textContent =
+    `Run ${nodeids.length} selected test${nodeids.length === 1 ? "" : "s"}`;
+  const warning = document.getElementById("run-modal-warning");
+  if (statefulCount > 0) {
+    warning.textContent =
+      `⚠ Run ${nodeids.length} selected tests? ${statefulCount} of these generate ` +
+      `real network traffic on the lab hardware.`;
+    warning.hidden = false;
+  } else {
+    warning.hidden = true;
+  }
+  document.getElementById("run-modal-count-field").hidden = false;
+  document.getElementById("run-modal-count-label").textContent = "How many times should each test run?";
+  document.getElementById("run-modal-confirm").textContent = "Run";
+  const countInput = document.getElementById("run-modal-count");
+  countInput.value = 1;
+  document.getElementById("run-modal-headed").checked = false;
+  document.getElementById("run-modal").hidden = false;
   countInput.focus();
   countInput.select();
 }
@@ -259,6 +388,21 @@ document.getElementById("run-modal-confirm").addEventListener("click", async () 
     // out from under whatever streamRun already found).
     if (!alreadyOnTests) await showPage("tests");
     await runAllInGroup(nodeids, headed);
+    return;
+  }
+  if (modalMode === "selected") {
+    const nodeids = modalGroupNodeids;
+    const raw = parseInt(document.getElementById("run-modal-count").value, 10);
+    const count = Number.isFinite(raw) && raw > 0 ? raw : 1;
+    closeRunModal();
+    // Same rendering-order reasoning as "group" above — plus this clears
+    // the just-used selection, so it must happen on the real Tests-tab
+    // render (a fresh renderTrafficGenerator call also clears
+    // state.selectedTests itself; calling clearTestSelection() here too
+    // covers the alreadyOnTests case, where that fresh render never runs).
+    if (!alreadyOnTests) await showPage("tests");
+    clearTestSelection();
+    await runSelectedTests(nodeids, count, headed);
     return;
   }
   const raw = parseInt(document.getElementById("run-modal-count").value, 10);
@@ -364,16 +508,20 @@ function streamRun(batchId, nodeid) {
   };
 }
 
-async function runAllInGroup(nodeids, headed = false) {
+// Shared by runAllInGroup (repeatCount always 1) and runSelectedTests
+// (repeatCount is whatever the "Run selected" modal's count field says) —
+// both are "start each nodeid, wait for it to finish, then start the
+// next" with identical failure handling; only the count differs.
+async function runNodeidsSequentially(nodeids, repeatCount, headed, actionLabel) {
   for (const nodeid of nodeids) {
-    const started = await startRun(nodeid, 1, headed);
+    const started = await startRun(nodeid, repeatCount, headed);
     if (!started) {
       // startRun already alerted with the specific reason (e.g. a 409
       // from another batch running). Without this, the loop would go on
       // to await a state.liveStatus[nodeid] === "done" that streamRun
       // never got the chance to set, polling forever on a leaked
       // interval. Stop the sequence here instead of hanging silently.
-      alert(`Run all stopped before finishing — "${nodeid}" could not be started.`);
+      alert(`${actionLabel} stopped before finishing — "${nodeid}" could not be started.`);
       return;
     }
     await new Promise((resolve) => {
@@ -387,6 +535,14 @@ async function runAllInGroup(nodeids, headed = false) {
   }
 }
 
+async function runAllInGroup(nodeids, headed = false) {
+  return runNodeidsSequentially(nodeids, 1, headed, "Run all");
+}
+
+async function runSelectedTests(nodeids, repeatCount, headed = false) {
+  return runNodeidsSequentially(nodeids, repeatCount, headed, "Run selected");
+}
+
 document.getElementById("nav-tests").addEventListener("click", () => showPage("tests"));
 document.getElementById("nav-results").addEventListener("click", () => showPage("results"));
 document.getElementById("nav-findings").addEventListener("click", () => showPage("findings"));
@@ -396,13 +552,15 @@ document.getElementById("nav-findings").addEventListener("click", () => showPage
 // clicking here behaves identically to landing directly on #overview;
 // when the hash is already "#overview" (no change → no hashchange event
 // would fire) render directly instead.
-document.getElementById("nav-overview").addEventListener("click", () => {
+function goToOverview() {
   if (location.hash === "#overview") {
     showPage("overview");
   } else {
     location.hash = "overview";
   }
-});
+}
+document.getElementById("nav-overview").addEventListener("click", goToOverview);
+document.getElementById("logo-home").addEventListener("click", goToOverview);
 
 // Returns the underlying render call's promise (all four are async
 // functions) so a caller that needs the panel to actually be populated
@@ -442,6 +600,36 @@ function outcomePillClass(outcome) {
   if (outcome === "pass" || outcome === "passed") return "pill-ok";
   if (outcome === "fail" || outcome === "failed" || outcome === "error") return "pill-bad";
   return "pill-warn";
+}
+
+// --- Known-issue status (open/investigating/fixed) ----------------------------
+//
+// Status comes from webapp/known_issues.py's classify_status() — a
+// lightweight keyword read of the findings doc's free-text "Status: ..."
+// line, never a certainty. Colors follow the same semantics as
+// outcomePillClass: open (unresolved) reads as --bad, investigating as
+// --warn (in progress, not yet resolved), fixed as --ok.
+const STATUS_PILL_CLASS = { open: "pill-bad", investigating: "pill-warn", fixed: "pill-ok" };
+const STATUS_LABEL = { open: "open", investigating: "investigating", fixed: "fixed" };
+
+function statusPill(status) {
+  const cls = STATUS_PILL_CLASS[status] || "pill-warn";
+  const label = STATUS_LABEL[status] || status;
+  return `<span class="pill ${cls}">${escapeHtml(label)}</span>`;
+}
+
+// Area-card summary badge: one small pill per non-empty bucket, in a
+// fixed open → investigating → fixed order so cards stay visually
+// comparable across the overview grid. `breakdown` can be undefined for
+// an older cached response shape — render nothing rather than throw.
+function renderStatusBreakdownPills(breakdown, rowClass) {
+  if (!breakdown) return "";
+  const order = ["open", "investigating", "fixed"];
+  const pills = order
+    .filter((status) => breakdown[status] > 0)
+    .map((status) => `<span class="pill ${STATUS_PILL_CLASS[status]}">${breakdown[status]} ${STATUS_LABEL[status]}</span>`)
+    .join(" ");
+  return pills ? `<div class="${rowClass}">${pills}</div>` : "";
 }
 
 async function renderOverview(panel) {
@@ -502,14 +690,7 @@ function renderAreaCard(area) {
     ? `<div class="area-card-row"><span class="area-card-label">Flaky</span></div>
        <ul class="flaky-list">${area.flaky_tests.map((nid) => `<li>${escapeHtml(nid.split("::").pop())}</li>`).join("")}</ul>`
     : "";
-  const issueHtml =
-    area.confirmed_issue_count > 0
-      ? `<div class="area-card-row">
-           <span class="pill pill-warn">
-             ${area.confirmed_issue_count} confirmed issue${area.confirmed_issue_count === 1 ? "" : "s"}
-           </span>
-         </div>`
-      : "";
+  const issueHtml = renderStatusBreakdownPills(area.status_breakdown, "area-card-row");
   // The card itself is the click-through into #area/<id> (its whole
   // surface, not just a sub-element) — everything already on it
   // (pass-rate, last run, flaky tests, issue count) is exactly the
@@ -529,17 +710,45 @@ function renderAreaCard(area) {
     </div>`;
 }
 
-// Clicking the "possible known issues" callout's findings link
-// (run-detail) wants to land on the Findings tab — no in-page scrolling.
-// One delegated listener covers it regardless of how many times that
+// Clicking a findings link switches to the Findings tab. When the button
+// also carries `data-issue-title` (the area-detail page's per-issue "See
+// in Findings" button — one specific known issue, not the whole callout),
+// scroll straight to that entry's own heading instead of leaving the
+// reader to hunt through the whole rendered doc for it. The run-detail
+// page's callout button has no single title (it can list several
+// possible matches at once) and keeps the plain "land on the tab" behavior.
+// One delegated listener covers both, regardless of how many times either
 // panel gets re-rendered.
 document.addEventListener("click", (e) => {
   const btn = e.target.closest('[data-jump="findings"]');
-  if (btn) {
-    e.preventDefault();
-    showPage("findings");
-  }
+  if (!btn) return;
+  e.preventDefault();
+  const issueTitle = btn.dataset.issueTitle;
+  showPage("findings").then(() => {
+    if (!issueTitle) return;
+    scrollToFindingsHeading(issueTitle);
+  });
 });
+
+// Finds the `###`-heading (rendered as an <h3>) in the Findings tab whose
+// text matches a known issue's title and scrolls it into view. Markdown
+// rendering assigns no `id`/anchor to headings, so this matches on the
+// heading's own text rather than requiring a server-side slug scheme —
+// exact match first (the normal case), falling back to a substring match
+// in case the title was ever trimmed/reformatted between the two call
+// sites. Silently does nothing if no heading matches (e.g. the issue was
+// edited/removed since the area page last loaded) rather than erroring.
+function scrollToFindingsHeading(title) {
+  const heading = Array.from(document.querySelectorAll(".findings-content h3")).find(
+    (h) => h.textContent.trim() === title.trim()
+  ) || Array.from(document.querySelectorAll(".findings-content h3")).find(
+    (h) => h.textContent.includes(title) || title.includes(h.textContent.trim())
+  );
+  if (!heading) return;
+  heading.scrollIntoView({ behavior: "smooth", block: "start" });
+  heading.classList.add("findings-heading-highlight");
+  setTimeout(() => heading.classList.remove("findings-heading-highlight"), 2000);
+}
 
 // --- Area-detail page ---------------------------------------------------------
 
@@ -590,12 +799,15 @@ function renderAreaKnownIssue(issue) {
       </ul>`
     : `<p class="test-desc">No test run in this area has failed with a matching signature yet.</p>`;
   return `
-    <div class="card area-issue-card">
-      <div class="known-issue-callout-title">${escapeHtml(issue.title)}</div>
+    <div class="card area-issue-card" data-issue-status="${escapeAttr(issue.status)}">
+      <div class="area-issue-card-title-row">
+        <div class="known-issue-callout-title">${escapeHtml(issue.title)}</div>
+        ${statusPill(issue.status)}
+      </div>
       <p class="test-desc">${escapeHtml(issue.body)}</p>
       <div class="area-issue-connected-title">Connected test runs</div>
       ${connectedHtml}
-      <button type="button" class="link-button" data-jump="findings">See in Findings →</button>
+      <button type="button" class="link-button" data-jump="findings" data-issue-title="${escapeAttr(issue.title)}">See in Findings →</button>
     </div>`;
 }
 
@@ -613,9 +825,21 @@ function renderAreaDetailContent(area) {
       } <span class="muted-cell">· ${formatTimestamp(area.last_run.timestamp)}</span>`
     : `<span class="muted-cell">No runs yet</span>`;
 
+  const fixedCount = (area.status_breakdown && area.status_breakdown.fixed) || 0;
   const issuesHtml = area.known_issues.length
     ? area.known_issues.map(renderAreaKnownIssue).join("")
     : `<p class="test-desc">No confirmed product issues recorded for this area.</p>`;
+  // Fixed issues are rendered (so the toggle below can reveal them
+  // in-place with no re-fetch) but start hidden — the default view is
+  // open/investigating only, so a settled bug doesn't clutter what's
+  // still actionable. Only offer the toggle when there's something for
+  // it to reveal.
+  const issuesFilterHtml = fixedCount
+    ? `<label class="field-checkbox area-issues-filter">
+         <input type="checkbox" id="show-fixed-issues-toggle">
+         Show fixed issues (${fixedCount})
+       </label>`
+    : "";
 
   const testsHtml = area.tests.length
     ? area.tests.map(renderAreaTestRow).join("")
@@ -634,12 +858,28 @@ function renderAreaDetailContent(area) {
         <div><dt>Flaky tests</dt><dd>${area.flaky_tests.length}</dd></div>
         <div><dt>Tests in area</dt><dd>${area.tests.length}</dd></div>
       </dl>
+      ${renderStatusBreakdownPills(area.status_breakdown, "area-card-row")}
     </div>
     <h3 class="run-detail-section-title">Confirmed known issues</h3>
+    ${issuesFilterHtml}
     ${issuesHtml}
     <h3 class="run-detail-section-title">Tests in this area</h3>
     <div class="run-detail-tests">${testsHtml}</div>
   `;
+}
+
+// Fixed-issue cards are already in the DOM (see renderAreaDetailContent) —
+// toggling just flips their `hidden` attribute, no re-render/re-fetch.
+// Defaults unchecked (fixed issues hidden) on every fresh render of this
+// page, matching "open/investigating is the default view."
+function attachAreaIssuesFilter(panel) {
+  const toggle = panel.querySelector("#show-fixed-issues-toggle");
+  if (!toggle) return;
+  const fixedCards = panel.querySelectorAll('.area-issue-card[data-issue-status="fixed"]');
+  fixedCards.forEach((card) => { card.hidden = true; });
+  toggle.addEventListener("change", () => {
+    fixedCards.forEach((card) => { card.hidden = !toggle.checked; });
+  });
 }
 
 async function renderAreaDetail(panel, areaId) {
@@ -647,6 +887,7 @@ async function renderAreaDetail(panel, areaId) {
   try {
     const area = await fetchJSON(`/api/areas/${encodeURIComponent(areaId)}`);
     panel.innerHTML = renderAreaDetailContent(area);
+    attachAreaIssuesFilter(panel);
   } catch (err) {
     // Covers the backend's 404 ("Unknown area: ...") and any other fetch
     // failure alike — same not-found-with-a-way-back pattern as
@@ -865,13 +1106,40 @@ async function renderResults(panel) {
       return;
     }
     panel.innerHTML = `
+      <div class="filter-field">
+        <input type="text" id="results-filter" class="filter-input" placeholder="Search results…" aria-label="Search results">
+      </div>
       <table class="results-table">
         <thead><tr><th>Run</th><th>Test</th><th>Runs</th><th>Pass rate</th><th>Duration</th><th>Started</th><th>Artifacts</th></tr></thead>
         <tbody>${batches.map(renderResultRow).join("")}</tbody>
-      </table>`;
+      </table>
+      <p id="results-filter-empty" class="test-desc" hidden>No results match.</p>`;
+    attachResultsFilter();
   } catch (err) {
     panel.innerHTML = `<p class="test-desc">Couldn't load results: ${escapeHtml(err.message)}</p>`;
   }
+}
+
+// Client-side filter for the Results tab — matches nodeid/test name,
+// run code, and iteration outcomes (so "RUN-42" finds that run and "fail"
+// finds runs with a failed/errored iteration), case-insensitive substring.
+// Toggles [hidden] on non-matching <tr>s rather than re-rendering the table.
+function attachResultsFilter() {
+  const input = document.getElementById("results-filter");
+  const emptyMsg = document.getElementById("results-filter-empty");
+  if (!input) return;
+  const rows = document.querySelectorAll(".results-table tbody tr");
+  input.addEventListener("input", () => {
+    const q = input.value.trim().toLowerCase();
+    let anyVisible = false;
+    rows.forEach((row) => {
+      const haystack = `${row.dataset.nodeid || ""} ${row.dataset.runCode || ""} ${row.dataset.outcomes || ""}`.toLowerCase();
+      const match = !q || haystack.includes(q);
+      row.hidden = !match;
+      if (match) anyVisible = true;
+    });
+    emptyMsg.hidden = anyVisible;
+  });
 }
 
 function formatTimestamp(ts) {
@@ -899,8 +1167,9 @@ function renderResultRow(batch) {
   const runCell = batch.run_code
     ? `<a href="#run/${encodeURIComponent(batch.run_code)}">${escapeHtml(batch.run_code)}</a>`
     : `<span class="muted-cell">—</span>`;
+  const outcomes = batch.iterations.map((i) => i.outcome).join(" ");
   return `
-    <tr>
+    <tr data-nodeid="${escapeAttr(batch.nodeid)}" data-run-code="${escapeAttr(batch.run_code || "")}" data-outcomes="${escapeAttr(outcomes)}">
       <td>${runCell}</td>
       <td>${batch.nodeid.split("::").pop()}</td>
       <td><span class="iteration-dots">${dots}</span></td>
