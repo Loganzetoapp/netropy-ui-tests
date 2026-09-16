@@ -9,9 +9,11 @@ Then fill in real values in `.env` (created for you from `.env.example`)
 and run `pytest -m smoke --headed` to confirm it works.
 
 `make setup` just automates: creating a `.venv`, `pip install -r
-requirements.txt`, `playwright install chromium`, and copying
-`.env.example` to `.env` if you don't have one yet — safe to re-run
-any time (e.g. after `pip install`-ing a new dependency).
+requirements.txt`, `playwright install chromium` (on Linux, also the
+OS-level libraries headless Chromium needs via `apt` — may prompt for
+your sudo password), and copying `.env.example` to `.env` if you don't
+have one yet — safe to re-run any time (e.g. after `pip install`-ing a
+new dependency).
 
 ## Running
 - pytest -m hardware_free      # safe anytime

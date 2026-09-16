@@ -27,7 +27,18 @@ pip install --quiet --upgrade pip
 pip install --quiet -r requirements.txt
 
 echo "Installing the Chromium browser Playwright drives (one-time download, ~150MB)..."
-python -m playwright install chromium
+if [ "$(uname -s)" = "Linux" ]; then
+  # Headless Chromium needs OS-level shared libraries (libnss3,
+  # libatk-bridge2.0-0, etc.) that macOS already has and Linux doesn't —
+  # --with-deps installs them via apt on Debian/Ubuntu, which needs root.
+  # Without this, the browser fixture crashes on its first launch on a
+  # fresh Linux box with an error that doesn't obviously point at missing
+  # system libs.
+  echo "Linux detected — also installing Chromium's OS-level dependencies via apt (may prompt for your sudo password)..."
+  python -m playwright install --with-deps chromium
+else
+  python -m playwright install chromium
+fi
 
 if [ ! -f .env ]; then
   cp .env.example .env

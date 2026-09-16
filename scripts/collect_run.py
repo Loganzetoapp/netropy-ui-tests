@@ -19,7 +19,6 @@ themselves stay gitignored, raw and regenerable.
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 import subprocess
@@ -28,6 +27,31 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+# File locking for _next_run_code's counter file — the two platform APIs
+# are different enough (fcntl locks a whole open file description;
+# msvcrt.locking locks a byte range at the current position) that there's
+# no single stdlib call for both, hence the small wrapper below rather
+# than a bare `import fcntl` that would crash-on-import for every Windows
+# user before even reaching the code that needs it.
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock_run_seq_file(f) -> None:
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+
+    def _unlock_run_seq_file(f) -> None:
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _lock_run_seq_file(f) -> None:
+        fcntl.flock(f, fcntl.LOCK_EX)
+
+    def _unlock_run_seq_file(f) -> None:
+        fcntl.flock(f, fcntl.LOCK_UN)
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_JUNIT = ROOT / "results" / "junit.xml"
@@ -149,10 +173,11 @@ def _parse_testcase(tc: ET.Element, artifacts_dir: Path) -> dict:
 def _next_run_code(history_dir: Path = DEFAULT_HISTORY_DIR) -> str:
     """Mint the next short human-facing run code (`RUN-<n>`) from a tiny
     counter file, `results/history/.run_seq` — a plain text integer, the
-    last code issued. `fcntl.flock`-guarded read-increment-write so two
-    pytest sessions finishing at the same moment (e.g. the webapp
-    triggering back-to-back iterations) never mint the same code —
-    macOS/Linux only, no Windows support needed for this repo.
+    last code issued. Lock-guarded read-increment-write (see
+    _lock_run_seq_file/_unlock_run_seq_file above — fcntl.flock on
+    macOS/Linux, msvcrt.locking on Windows) so two pytest sessions
+    finishing at the same moment (e.g. the webapp triggering back-to-back
+    iterations) never mint the same code.
 
     Also the sequence backfill (`scripts/backfill_run_codes.py`) builds
     on: calling this repeatedly just keeps counting up from wherever the
@@ -162,9 +187,15 @@ def _next_run_code(history_dir: Path = DEFAULT_HISTORY_DIR) -> str:
     history_dir.mkdir(parents=True, exist_ok=True)
     seq_path = history_dir / RUN_SEQ_FILENAME
     seq_path.touch(exist_ok=True)  # ensure it exists so "r+" below can open it
+    if seq_path.stat().st_size == 0:
+        # msvcrt.locking locks a byte range, not the whole file — it needs
+        # at least one byte to exist at that range on a brand-new file, or
+        # Windows raises rather than just locking an empty extent.
+        seq_path.write_text("0")
     with open(seq_path, "r+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        _lock_run_seq_file(f)
         try:
+            f.seek(0)
             raw = f.read().strip()
             try:
                 n = int(raw) if raw else 0
@@ -175,7 +206,7 @@ def _next_run_code(history_dir: Path = DEFAULT_HISTORY_DIR) -> str:
             f.truncate()
             f.write(str(n))
         finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+            _unlock_run_seq_file(f)
     return f"RUN-{n}"
 
 
