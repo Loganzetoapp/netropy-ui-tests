@@ -53,6 +53,18 @@ login would let anyone who can reach the machine do that. The one-test-at-a-
 time rule is enforced server-side regardless of how many people are looking
 at it, same as running it solo.
 
+### Running it unattended (e.g. a dedicated Ubuntu box)
+
+`make run-dashboard` is a foreground process — fine for sharing with one
+other person while you're at your desk, not something to rely on for a
+machine other people reach remotely whenever they want. `deploy/netropy-
+dashboard.service` is a systemd unit that runs it as a real background
+service instead: starts on boot, restarts automatically if it ever
+crashes, logs go to `journalctl -u netropy-dashboard` (rotated
+automatically). See the comments at the top of that file for the
+install steps — it's a few `sudo systemctl` commands after one manual
+edit (the deploy user and repo path for that machine).
+
 ## Failure review
 
 Every dashboard-triggered test failure gets its evidence captured

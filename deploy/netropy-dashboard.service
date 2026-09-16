@@ -1,0 +1,46 @@
+# systemd unit for running the Netropy Test Dashboard unattended on Ubuntu
+# (or any systemd-based Linux) — auto-starts on boot, auto-restarts if it
+# crashes, and logs go to journald (rotated automatically, no separate
+# logrotate config needed).
+#
+# Install:
+#   1. Edit User= and WorkingDirectory= below for this machine (see the
+#      inline notes — both are placeholders).
+#   2. sudo cp deploy/netropy-dashboard.service /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now netropy-dashboard
+#
+# Check on it:
+#   sudo systemctl status netropy-dashboard   # is it up
+#   journalctl -u netropy-dashboard -f        # tail logs live
+#   sudo systemctl restart netropy-dashboard  # after a `git pull`
+#
+# This assumes `make setup` has already been run once in WorkingDirectory
+# (so .venv/ and .env exist) — systemd doesn't run that for you.
+
+[Unit]
+Description=Netropy Test Dashboard
+After=network.target
+
+[Service]
+Type=simple
+
+# Replace with the Linux user this should run as. Not root — pick
+# whichever account already owns the cloned repo and ran `make setup`.
+User=REPLACE_ME_deploy_user
+
+# Replace with the absolute path to the cloned repo on this machine, e.g.
+# /home/REPLACE_ME_deploy_user/netropy-ui-tests
+WorkingDirectory=REPLACE_ME_absolute_path_to_repo
+
+# webapp/app.py's own load_dotenv() call reads .env from here — nothing
+# else needed for WEBAPP_HOST/PORT/USER/PASSWORD, NETROPY_*, or
+# ANTHROPIC_API_KEY to take effect, same as running `make run-dashboard`
+# by hand from this directory.
+ExecStart=REPLACE_ME_absolute_path_to_repo/.venv/bin/python -m webapp.app
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
