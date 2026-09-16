@@ -1,0 +1,20 @@
+{
+  "run_id": "20260916T025311Z",
+  "run_code": "RUN-78",
+  "timestamp": "2026-09-16T02:53:11Z",
+  "git_sha": "c6b72a1",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "duration": 10.176,
+  "tests": [
+    {
+      "nodeid": "tests/t13_connectivity_diagnostics/test_t13_dhcp_pre_acq_not_supported.py::test_t13_dhcp_pre_acq_renders_not_supported[chromium]",
+      "outcome": "pass",
+      "duration": 10.162,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "65002310-1cda-44c4-b62d-a02dbfecb714"
+}
