@@ -237,8 +237,8 @@ For each WAN test:
 
 | Step | What | Size | Depends on |
 |---|---|---|---|
-| 0 | Commit T15 on a branch; run it 3× on .212/.213 for the stability rule; confirm emulator a→b = NTG Port 3→4 | S | — |
-| 1 | `ntg_api.py` + `wan_api.py`: read-only clients (login, status, stats, runs, stats-summary/records) with the `/stats`-after-stop guard | S | Decision 1 |
+| 0 ✅ | Commit T15 on a branch (`wan-emulator-t15`, 18a28ec). The 3× stability runs were skipped at Logan's request. a→b vs NTG Port 3→4 mapping is still to confirm, in step 2 | S | — |
+| 1 ✅ | `ntg_api.py` + `wan_api.py`: read-only clients (login, status, stats, runs, stats-summary/records) with the `/stats`-after-stop guard. Checked against .212/.213 (reads only) | S | Decision 1 |
 | 2 | `wan_metrics` fixture + history `metrics` + series sidecar; T15 records its full numbers | M | 1 |
 | 3 | Results page: expected-vs-measured table, two-witness panel, time-series charts | M | 2 |
 | 4 | T16a/b (loss, criteria) and T17a/b (bandwidth): first tests using the cross-checks | M | 2, decision 3 |

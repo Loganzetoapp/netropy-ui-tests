@@ -156,6 +156,24 @@ separately:
 
 ## Log
 
+### 2026-10-05 — read-only API clients; two leads from the emulator's counters
+- Added `ntg_api.py` and `wan_api.py` (step 1 of docs/wan-integration-plan.md).
+  Both only read. The NTG login returns a `session-token` that must be sent
+  as a Bearer header (every route except /health answers 401 without it).
+  `live_stats()` refuses unless the datapath is RUNNING (Controller-crash rule).
+- **Lead, unverified: one direction carried ~1/10 of the frames.** Engine 2's
+  Bypass counters on .213 before and after the one T15 run on .212: a→b
+  +902,227 frames, b→a only **+90,230**. Only T15's baseline went through
+  Bypass (the delayed half used its own path). If each NTG port sent ~902 K
+  frames, as on the earlier pair, one NTG port sent about a tenth of its
+  share while the run still reported 0 % loss. That's the same symptom as
+  finding #4 ("Port 4 sent ~1/10"). Either that bug is back on .212, or the
+  emulator's b→a counter is wrong. The next T15 run will settle it once it
+  records the NTG per-port TX next to the emulator counts (step 2).
+- **Emulator .213 Engine 2 reports 22,267,559,145 buffer failures** (the .76
+  unit showed 131.8 M). Not explained yet. Worth asking whether this counter
+  means dropped frames, because if so it can corrupt loss results.
+
 ### 2026-10-01 (evening) — WAN emulator
 - Mapped the emulator at .76 (read-only): Netropy 10G2, 4 ports, 2 engines.
   Engine 1 = ports 1/2, Engine 2 = ports 3/4. Emulation is **off** on both
