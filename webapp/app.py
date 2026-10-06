@@ -34,6 +34,7 @@ from webapp.known_issues import (
 )
 from webapp.persistence import HISTORY_DIR, get_run, list_batches, list_runs_for_nodeid, list_test_runs
 from webapp.runner import AlreadyRunningError, IterationEvent, TestRunner
+from webapp.targets import list_targets, normalize_target_url
 from webapp.trace_summary import extract_trace_summary
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -64,6 +65,9 @@ class RunRequest(BaseModel):
     nodeid: str
     repeat_count: int = 1
     headed: bool = False
+    # Which box to run against. None = the .env NETROPY_URL (see
+    # webapp/targets.py).
+    target_url: Optional[str] = None
 
 
 @app.get("/api/modules")
@@ -130,11 +134,24 @@ def _marker_for(nodeid: str) -> str:
     raise HTTPException(404, f"Unknown test: {nodeid}")
 
 
+@app.get("/api/targets")
+def get_targets():
+    return list_targets()
+
+
 @app.post("/api/runs")
 def start_run(req: RunRequest):
     marker = _marker_for(req.nodeid)
+    target_url = None
+    if req.target_url:
+        try:
+            target_url = normalize_target_url(req.target_url)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
     try:
-        batch_id = runner.start(req.nodeid, marker, req.repeat_count, req.headed)
+        batch_id = runner.start(
+            req.nodeid, marker, req.repeat_count, req.headed, target_url=target_url
+        )
     except AlreadyRunningError as exc:
         raise HTTPException(409, str(exc))
     return {"batch_id": batch_id}
@@ -197,17 +214,21 @@ def get_results():
 
 
 FINDINGS_PATH = REPO_ROOT / "netropy-ui-findings.md"
+# The running write-up of the current investigation (status table, evidence,
+# suite changes) — shown above the full findings doc on the Findings tab.
+INVESTIGATION_LOG_PATH = REPO_ROOT / "docs" / "ntg5-investigation-log.md"
+
+
+def _render_markdown(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    return markdown.markdown(path.read_text(), extensions=["fenced_code", "tables"])
 
 
 @app.get("/api/findings")
 def get_findings():
-    if not FINDINGS_PATH.exists():
-        html = "<p>No findings recorded yet.</p>"
-    else:
-        html = markdown.markdown(
-            FINDINGS_PATH.read_text(), extensions=["fenced_code", "tables"]
-        )
-    return {"html": html}
+    html = _render_markdown(FINDINGS_PATH) or "<p>No findings recorded yet.</p>"
+    return {"html": html, "investigation_html": _render_markdown(INVESTIGATION_LOG_PATH)}
 
 
 # --- Run-detail and area-rollup endpoints -----------------------------------
@@ -286,6 +307,17 @@ def _known_issue_area_token(nodeid: str, area: Optional[dict]) -> Optional[str]:
     return sorted(tokens)[0]
 
 
+def _metrics_url(metrics_file):
+    """The /results URL of a run_metrics sidecar, or None. Only files under
+    results/metrics/ are exposed (history is local, but don't link out of it)."""
+    if not metrics_file:
+        return None
+    rel = Path(metrics_file)
+    if rel.is_absolute() or ".." in rel.parts or rel.parts[:2] != ("results", "metrics"):
+        return None
+    return "/" + rel.as_posix()
+
+
 @app.get("/api/runs/{run_code}")
 def get_run_detail(run_code: str):
     run = get_run(run_code, HISTORY_DIR)
@@ -323,7 +355,12 @@ def get_run_detail(run_code: str):
         rows = list_runs_for_nodeid(nodeid, HISTORY_DIR) if nodeid else []
         if nodeid and nodeid not in sibling_runs:
             sibling_runs[nodeid] = [
-                {"run_code": r["run_code"], "timestamp": r["timestamp"], "outcome": r["outcome"]}
+                {
+                    "run_code": r["run_code"],
+                    "timestamp": r["timestamp"],
+                    "outcome": r["outcome"],
+                    "failure_kind": r.get("failure_kind"),
+                }
                 for r in rows
                 if r["run_code"] != run_code
             ][:SIBLING_RUN_LIMIT]
@@ -334,6 +371,7 @@ def get_run_detail(run_code: str):
             {
                 "nodeid": nodeid,
                 "outcome": outcome,
+                "failure_kind": test.get("failure_kind"),
                 "duration": test.get("duration", 0.0),
                 "failure_message": failure_message,
                 "screenshot": test.get("screenshot"),
@@ -341,6 +379,11 @@ def get_run_detail(run_code: str):
                 "area": area,
                 "known_issue_matches": known_issue_matches,
                 "trace_summary": trace_summary,
+                # Measured numbers (run_metrics.py): checks and per-run
+                # digests inline; the per-second series stay in the sidecar
+                # file, which the page fetches from the /results mount.
+                "metrics": test.get("metrics"),
+                "metrics_file": _metrics_url(test.get("metrics_file")),
             }
         )
 
@@ -496,6 +539,7 @@ def get_area_detail(area_id: str):
                     "run_code": latest["run_code"],
                     "timestamp": latest["timestamp"],
                     "outcome": latest["outcome"],
+                    "failure_kind": latest.get("failure_kind"),
                 }
 
             tests_out.append(
@@ -539,6 +583,7 @@ def get_area_detail(area_id: str):
                                 "run_code": row["run_code"],
                                 "timestamp": row["timestamp"],
                                 "outcome": row["outcome"],
+                                "failure_kind": row.get("failure_kind"),
                             }
                         )
         issues_out.append(

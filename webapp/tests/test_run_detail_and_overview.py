@@ -398,3 +398,52 @@ def test_overview_handles_missing_findings_file(monkeypatch, tmp_path):
         a["status_breakdown"] == {"open": 0, "investigating": 0, "fixed": 0}
         for a in resp.json()["areas"]
     )
+
+
+# --- measured numbers (run_metrics) -------------------------------------------
+
+
+def _write_history_with_metrics(history_dir: Path, metrics_file):
+    history_dir.mkdir(parents=True, exist_ok=True)
+    data = {
+        "run_id": "20261005T000000Z",
+        "run_code": "RUN-77",
+        "timestamp": "2026-10-05T00:00:00+00:00",
+        "tests": [
+            {
+                "nodeid": T1_NODEID,
+                "outcome": "pass",
+                "duration": 140.0,
+                "failure_message": None,
+                "screenshot": None,
+                "trace": None,
+                "metrics": {"checks": [{"name": "latency", "expected": 50, "measured": 50.0, "ok": True}]},
+                "metrics_file": metrics_file,
+            }
+        ],
+    }
+    (history_dir / "20261005T000000Z.json").write_text(json.dumps(data))
+
+
+def test_get_run_detail_passes_metrics_and_sidecar_url(client):
+    c, history_dir = client
+    _write_history_with_metrics(history_dir, "results/metrics/t15-x-20261005T000000Z.json")
+    test = c.get("/api/runs/RUN-77").json()["tests"][0]
+    assert test["metrics"]["checks"][0]["name"] == "latency"
+    assert test["metrics_file"] == "/results/metrics/t15-x-20261005T000000Z.json"
+
+
+@pytest.mark.parametrize(
+    "bad", ["/etc/passwd", "results/../conftest.py", "results/history/x.json", "metrics/x.json"]
+)
+def test_get_run_detail_never_links_outside_results_metrics(client, bad):
+    c, history_dir = client
+    _write_history_with_metrics(history_dir, bad)
+    assert c.get("/api/runs/RUN-77").json()["tests"][0]["metrics_file"] is None
+
+
+def test_get_run_detail_without_metrics_has_null_fields(client):
+    c, history_dir = client
+    _write_history(history_dir, "r1", T1_NODEID, "pass", "2026-10-05T00:00:00+00:00", "RUN-1")
+    test = c.get("/api/runs/RUN-1").json()["tests"][0]
+    assert test["metrics"] is None and test["metrics_file"] is None

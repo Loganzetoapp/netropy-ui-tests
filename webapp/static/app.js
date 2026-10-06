@@ -2,6 +2,45 @@
 // stateful-count warning without a second lookup against state.catalog.
 const state = { catalog: null, liveStatus: {}, batchRunning: false, selectedTests: new Map() };
 
+// Dark mode toggle. The initial theme (if any was stored) is already
+// applied by an inline <head> script before first paint — this just
+// wires up flipping it from here on. Reads the OS preference directly
+// rather than trusting any single CSS state, since "no stored choice"
+// means the effective theme is whatever prefers-color-scheme says, and
+// the toggle needs to know that to decide which way to flip.
+function currentEffectiveTheme() {
+  const explicit = document.documentElement.getAttribute("data-theme");
+  if (explicit === "dark" || explicit === "light") return explicit;
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+function initThemeToggle() {
+  const btn = document.getElementById("theme-toggle");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const next = currentEffectiveTheme() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("theme", next);
+    } catch (e) {
+      // Private browsing / blocked storage — the toggle still works for
+      // this page load, it just won't persist across a reload.
+    }
+  });
+}
+initThemeToggle();
+
+// The logo and module icons are real product artwork with white
+// backgrounds baked in, so each has a pre-generated dark variant
+// (scripts/make_dark_icons.py). Emit both and let styles.css show the one
+// matching the active theme — no JS needed when the theme flips.
+function themedImg(src, alt = "") {
+  const darkSrc = src.replace(/\/([^/]+)$/, "/dark/$1");
+  return `<img src="${src}" alt="${alt}" class="img-light"><img src="${darkSrc}" alt="${alt}" class="img-dark">`;
+}
+
 async function fetchJSON(url, opts) {
   const res = await fetch(url, opts);
   if (!res.ok) {
@@ -19,7 +58,7 @@ async function loadModules() {
   modules.forEach((m, i) => {
     const btn = document.createElement("button");
     btn.className = "tab" + (i === 0 ? " active" : "");
-    btn.innerHTML = `<img src="${m.icon}" alt=""><span>${m.name}</span>`;
+    btn.innerHTML = `${themedImg(m.icon)}<span>${m.name}</span>`;
     btn.addEventListener("click", () => selectModule(m, btn));
     nav.appendChild(btn);
   });
@@ -33,7 +72,7 @@ function selectModule(module, btn) {
   if (!module.available) {
     panel.innerHTML = `
       <div class="coming-soon">
-        <img src="${module.icon}" alt="">
+        ${themedImg(module.icon)}
         <h2>${module.name}</h2>
         <p>Test coverage for this module hasn't been built yet.</p>
       </div>`;
@@ -267,6 +306,95 @@ function toggleDetail(row) {
 // (openRunAllModal — no repeat count, every test runs once, calls
 // runAllInGroup), and "selected" (openRunSelectedModal — repeat count
 // applies to EACH selected test, calls runSelectedTests).
+// Which box a run points at. Presets come from /api/targets (see
+// webapp/targets.py); "Custom…" takes any IP/URL. The choice is remembered
+// per browser so it sticks across runs, and is validated again server-side.
+const TARGET_STORAGE_KEY = "netropy-dash-target";
+const TARGET_CUSTOM_STORAGE_KEY = "netropy-dash-target-custom";
+const CUSTOM_TARGET = "__custom__";
+let targetsInfo = null;
+// Set when the run modal is confirmed; read by startRun for every run in
+// that batch (single, selected, or run-all).
+let runTarget = null;
+
+function readStored(key) {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+function writeStored(key, value) {
+  try { localStorage.setItem(key, value); } catch { /* private mode etc. */ }
+}
+
+async function populateTargetSelect() {
+  const select = document.getElementById("run-modal-target");
+  if (!targetsInfo) {
+    try {
+      targetsInfo = await fetchJSON("/api/targets");
+    } catch {
+      targetsInfo = { default: "", presets: [] };
+    }
+  }
+  select.innerHTML = "";
+  for (const preset of targetsInfo.presets) {
+    const opt = document.createElement("option");
+    opt.value = preset.url;
+    opt.textContent = `${preset.label} — ${preset.url.replace(/^https?:\/\//, "")}`;
+    select.appendChild(opt);
+  }
+  const custom = document.createElement("option");
+  custom.value = CUSTOM_TARGET;
+  custom.textContent = "Custom…";
+  select.appendChild(custom);
+
+  const stored = readStored(TARGET_STORAGE_KEY);
+  const known = [...select.options].some((o) => o.value === stored);
+  select.value = known ? stored : targetsInfo.default || select.options[0].value;
+  document.getElementById("run-modal-target-custom").value =
+    readStored(TARGET_CUSTOM_STORAGE_KEY) || "";
+  syncCustomTargetField();
+}
+
+function syncCustomTargetField() {
+  const isCustom = document.getElementById("run-modal-target").value === CUSTOM_TARGET;
+  document.getElementById("run-modal-target-custom-field").hidden = !isCustom;
+  document.getElementById("run-modal-target-error").hidden = true;
+}
+
+// Returns the chosen target URL, or null after showing an inline error.
+// Loose client-side shape check only; the server does the real validation.
+function selectedTargetOrError() {
+  const errorEl = document.getElementById("run-modal-target-error");
+  const value = document.getElementById("run-modal-target").value;
+  if (value !== CUSTOM_TARGET) {
+    writeStored(TARGET_STORAGE_KEY, value);
+    return value;
+  }
+  const raw = document.getElementById("run-modal-target-custom").value.trim();
+  if (!/^(https?:\/\/)?[A-Za-z0-9.\-]+(:\d{1,5})?\/?$/.test(raw)) {
+    errorEl.textContent = raw
+      ? "That doesn't look like an IP address or URL (e.g. 192.168.173.120 or http://10.0.0.5:8080)."
+      : "Enter an IP address or URL for the custom target.";
+    errorEl.hidden = false;
+    document.getElementById("run-modal-target-custom").focus();
+    return null;
+  }
+  writeStored(TARGET_STORAGE_KEY, CUSTOM_TARGET);
+  writeStored(TARGET_CUSTOM_STORAGE_KEY, raw);
+  return raw;
+}
+
+document.getElementById("run-modal-target").addEventListener("change", () => {
+  syncCustomTargetField();
+  if (document.getElementById("run-modal-target").value === CUSTOM_TARGET) {
+    document.getElementById("run-modal-target-custom").focus();
+  }
+});
+document.getElementById("run-modal-target-custom").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    document.getElementById("run-modal-confirm").click();
+  }
+});
+
 let modalMode = null;
 let modalNodeid = null;
 let modalGroupNodeids = null;
@@ -286,6 +414,7 @@ function openRunModal(nodeid, marker, triggerEl) {
   const countInput = document.getElementById("run-modal-count");
   countInput.value = 1;
   document.getElementById("run-modal-headed").checked = false;
+  populateTargetSelect();
   document.getElementById("run-modal").hidden = false;
   // Land keyboard focus in the field people are most likely to change,
   // with its default value pre-selected so typing overwrites it.
@@ -319,6 +448,7 @@ function openRunSelectedModal(nodeids, statefulCount, triggerEl) {
   const countInput = document.getElementById("run-modal-count");
   countInput.value = 1;
   document.getElementById("run-modal-headed").checked = false;
+  populateTargetSelect();
   document.getElementById("run-modal").hidden = false;
   countInput.focus();
   countInput.select();
@@ -341,6 +471,7 @@ function openRunAllModal(nodeids, groupName, statefulCount, triggerEl) {
   document.getElementById("run-modal-count-field").hidden = true;
   document.getElementById("run-modal-confirm").textContent = "Run all";
   document.getElementById("run-modal-headed").checked = false;
+  populateTargetSelect();
   document.getElementById("run-modal").hidden = false;
   document.getElementById("run-modal-confirm").focus();
 }
@@ -370,6 +501,9 @@ document.getElementById("run-modal-count").addEventListener("keydown", (e) => {
 
 document.getElementById("run-modal-confirm").addEventListener("click", async () => {
   const headed = document.getElementById("run-modal-headed").checked;
+  const target = selectedTargetOrError();
+  if (target === null) return;
+  runTarget = target;
   // The modal can now be opened from pages other than Tests (e.g. the
   // run-detail page's "Run again" button) — the live status pill
   // streamRun updates only exists on a Tests-tab row, so jump there first
@@ -423,7 +557,7 @@ async function startRun(nodeid, repeatCount, headed = false) {
     const { batch_id } = await fetchJSON("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ nodeid, repeat_count: repeatCount, headed }),
+      body: JSON.stringify({ nodeid, repeat_count: repeatCount, headed, target_url: runTarget }),
     });
     streamRun(batch_id, nodeid);
     return true;
@@ -602,6 +736,18 @@ function outcomePillClass(outcome) {
   return "pill-warn";
 }
 
+// A failure the suite attributed to the unit itself being unhealthy
+// (offline / recovery mode / disconnected testbed / lost run stats) —
+// conftest.py's SystemBadStateError, recorded as failure_kind "system".
+// Shown as its own pill so it isn't mistaken for a test finding a bug in
+// a healthy unit.
+function outcomePill(outcome, failureKind) {
+  if (failureKind === "system" && (outcome === "fail" || outcome === "error")) {
+    return `<span class="pill pill-system" data-tip="The unit itself was unhealthy (offline, recovery mode, or run results lost)">system failure</span>`;
+  }
+  return `<span class="pill ${outcomePillClass(outcome)}">${escapeHtml(outcome)}</span>`;
+}
+
 // --- Known-issue status (open/investigating/fixed) ----------------------------
 //
 // Status comes from webapp/known_issues.py's classify_status() — a
@@ -739,12 +885,15 @@ document.addEventListener("click", (e) => {
 // sites. Silently does nothing if no heading matches (e.g. the issue was
 // edited/removed since the area page last loaded) rather than erroring.
 function scrollToFindingsHeading(title) {
-  const heading = Array.from(document.querySelectorAll(".findings-content h3")).find(
-    (h) => h.textContent.trim() === title.trim()
-  ) || Array.from(document.querySelectorAll(".findings-content h3")).find(
-    (h) => h.textContent.includes(title) || title.includes(h.textContent.trim())
-  );
+  // Known issues live in the findings doc, not the investigation log above
+  // it — search only there, and expand that section if it's collapsed.
+  const section = document.getElementById("all-findings");
+  const root = section || document;
+  const headings = Array.from(root.querySelectorAll(".findings-content h3"));
+  const heading = headings.find((h) => h.textContent.trim() === title.trim()) ||
+    headings.find((h) => h.textContent.includes(title) || title.includes(h.textContent.trim()));
   if (!heading) return;
+  if (section) section.open = true;
   heading.scrollIntoView({ behavior: "smooth", block: "start" });
   heading.classList.add("findings-heading-highlight");
   setTimeout(() => heading.classList.remove("findings-heading-highlight"), 2000);
@@ -754,7 +903,7 @@ function scrollToFindingsHeading(title) {
 
 function renderAreaTestRow(test) {
   const outcomeHtml = test.last_run
-    ? `<span class="pill ${outcomePillClass(test.last_run.outcome)}">${escapeHtml(test.last_run.outcome)}</span>`
+    ? outcomePill(test.last_run.outcome, test.last_run.failure_kind)
     : `<span class="pill muted-cell">No runs</span>`;
   const passRatePct = test.pass_rate == null ? null : Math.round(test.pass_rate * 100);
   const passRateHtml =
@@ -790,7 +939,7 @@ function renderAreaKnownIssue(issue) {
               ? `<a href="#run/${encodeURIComponent(c.run_code)}">${escapeHtml(c.run_code)}</a>`
               : `<span class="muted-cell">unlinked run</span>`;
             return `<li>
-              <span class="pill ${outcomePillClass(c.outcome)}">${escapeHtml(c.outcome)}</span>
+              ${outcomePill(c.outcome, c.failure_kind)}
               ${nameHtml} — ${runHtml}
               <span class="test-desc">${formatTimestamp(c.timestamp)}</span>
             </li>`;
@@ -932,6 +1081,464 @@ function renderKnownIssueMatches(matches) {
     </div>`;
 }
 
+// --- Measurements (run_metrics.py) ---------------------------------------
+//
+// Tests that use the run_metrics fixture carry `metrics` in history:
+// expected-vs-measured checks, plus per run the NTG's saved run (via its
+// API) and the WAN emulator's counters. Per-second series live in the
+// sidecar file at `metrics_file` and are fetched when the page renders.
+
+const FRAME_AGREEMENT = 0.005; // same 0.5 % allowance T15 uses
+
+function fmtNum(v, digits = 0) {
+  if (typeof v !== "number" || !isFinite(v)) return "—";
+  return v.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function fmtCheckValue(v, unit) {
+  const digits = unit === "frames" ? 0 : unit === "Mbps" ? 1 : 3;
+  return `${fmtNum(v, digits)}${unit && unit !== "frames" ? ` ${escapeHtml(unit)}` : ""}`;
+}
+
+function checkPill(c) {
+  if (c.enforced) return c.ok ? `<span class="pill pill-ok">✓ Pass</span>` : `<span class="pill pill-bad">✗ Fail</span>`;
+  return c.ok
+    ? `<span class="pill pill-ok">✓ Info · matches</span>`
+    : `<span class="pill pill-warn">! Info · off</span>`;
+}
+
+function renderChecksTable(checks) {
+  if (!checks || checks.length === 0) return "";
+  const rows = checks
+    .map((c) => {
+      const delta = typeof c.measured === "number" && typeof c.expected === "number" ? c.measured - c.expected : null;
+      const tol = typeof c.tolerance === "number" ? `± ${fmtCheckValue(c.tolerance, c.unit)}` : "exact";
+      return `<tr class="${!c.ok ? "row-bad" : ""}">
+        <td>${escapeHtml(c.name)}</td>
+        <td class="num">${fmtCheckValue(c.expected, c.unit)}</td>
+        <td class="num">${fmtCheckValue(c.measured, c.unit)}</td>
+        <td class="num">${delta === null ? "—" : (delta > 0 ? "+" : "") + fmtCheckValue(delta, c.unit)}</td>
+        <td class="num">${tol}</td>
+        <td>${checkPill(c)}</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <h4>Expected vs measured</h4>
+    <table class="metrics-table">
+      <thead><tr><th>Check</th><th class="num">Expected</th><th class="num">Measured</th>
+        <th class="num">Δ</th><th class="num">Tolerance</th><th>Result</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="metrics-note">"Info" checks are recorded but don't fail the test yet.</p>`;
+}
+
+// NTG directions, summed over streams, ordered low port → high port. The
+// emulator's a-to-b is its first port → second, cabled to the lower NTG
+// port, so index 0 pairs with a-to-b (confirmed by frame counts, 2026-10-05).
+function ntgDirections(ntg) {
+  const byKey = new Map();
+  for (const d of (ntg && ntg.direction) || []) {
+    const key = `${d["from-port"]}→${d["to-port"]}`;
+    const acc = byKey.get(key) || { from: d["from-port"], to: d["to-port"], tx: 0, rx: 0, dropped: 0, latency: d["avg-latency"] };
+    acc.tx += d["tx-frames"] || 0;
+    acc.rx += d["rx-frames"] || 0;
+    acc.dropped += d.dropped || 0;
+    byKey.set(key, acc);
+  }
+  return [...byKey.values()].sort((a, b) => a.from - b.from);
+}
+
+const EMULATOR_DIRECTIONS = ["a-to-b", "b-to-a"];
+
+function renderWitnessTable(run) {
+  const dirs = ntgDirections(run.ntg);
+  if (dirs.length === 0) return "";
+  const delta = (run.wan && run.wan.delta) || {};
+  const rows = dirs
+    .map((d, i) => {
+      const emu = delta[EMULATOR_DIRECTIONS[i]] || {};
+      const carried = emu.frames;
+      // Bypass has no impairment or queue counters: show "—", not 0.
+      const dropped = emu.wan
+        ? (emu.wan.drops || 0) + (emu.inflow && emu.inflow.queue ? emu.inflow.queue.drops || 0 : 0)
+        : null;
+      const agrees = typeof carried === "number" && Math.abs(carried - d.tx) <= d.tx * FRAME_AGREEMENT;
+      const agreeCell =
+        typeof carried !== "number"
+          ? `<span class="muted-cell">—</span>`
+          : agrees
+            ? `<span class="pill pill-ok">✓ match</span>`
+            : `<span class="pill pill-bad">✗ off by ${fmtNum(carried - d.tx)}</span>`;
+      return `<tr class="${typeof carried === "number" && !agrees ? "row-bad" : ""}">
+        <td>Port ${escapeHtml(String(d.from))} → ${escapeHtml(String(d.to))}</td>
+        <td class="num">${fmtNum(d.tx)}</td>
+        <td class="num">${fmtNum(d.rx)}</td>
+        <td class="num">${fmtNum(d.dropped)}</td>
+        <td class="num">${fmtNum(d.latency / 1000, 3)} ms</td>
+        <td class="num">${fmtNum(carried)}</td>
+        <td class="num">${dropped === null ? "—" : fmtNum(dropped)}</td>
+        <td>${agreeCell}</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <table class="metrics-table">
+      <thead><tr><th>Direction</th><th class="num">NTG sent</th><th class="num">NTG received</th>
+        <th class="num">NTG lost</th><th class="num">NTG avg latency</th>
+        <th class="num">Emulator carried</th><th class="num">Emulator dropped</th><th>Counts agree</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function renderPortRateTable(ntg) {
+  const configured = (ntg && ntg["configured-ports"]) || [];
+  if (configured.length === 0) return "";
+  const actual = new Map(((ntg && ntg.port) || []).map((p) => [p["port-id"], p]));
+  const rows = configured
+    .map((c) => {
+      const p = actual.get(c["port-id"]) || {};
+      const share = c["rate-mbps"] ? p["avg-tx-rate"] / c["rate-mbps"] : null;
+      const low = typeof share === "number" && share < 0.85;
+      return `<tr class="${low ? "row-bad" : ""}">
+        <td>Port ${escapeHtml(String(c["port-id"]))}</td>
+        <td class="num">${fmtNum(c["rate-mbps"], 0)} Mbps</td>
+        <td class="num">${fmtNum(p["avg-tx-rate"], 1)} Mbps</td>
+        <td class="num">${fmtNum(p["avg-rx-rate"], 1)} Mbps</td>
+        <td class="num">${typeof share === "number" ? fmtNum(share * 100, 0) + " %" : "—"}</td>
+        <td>${typeof share !== "number" ? "" : low ? `<span class="pill pill-bad">✗ under rate</span>` : `<span class="pill pill-ok">✓ ok</span>`}</td>
+      </tr>`;
+    })
+    .join("");
+  return `
+    <table class="metrics-table">
+      <thead><tr><th>NTG port</th><th class="num">Configured</th><th class="num">Avg TX</th>
+        <th class="num">Avg RX</th><th class="num">TX of configured</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p class="metrics-note">Averages include the ramps, so a healthy port reads a little under 100 %.</p>`;
+}
+
+function renderRunMeta(run) {
+  const ntg = run.ntg || {};
+  const st = ntg.stages || {};
+  const phases = [
+    ["ramp up", st["ramp-up-sec"]],
+    ["main", st["main-sec"]],
+    ["ramp down", st["ramp-down-sec"]],
+    ["tail", st["tail-sec"]],
+  ]
+    .filter(([, v]) => typeof v === "number")
+    .map(([k, v]) => `${k} ${fmtNum(v, 1)} s`)
+    .join(" · ");
+  const parts = [
+    ntg.number !== undefined ? `NTG run #${escapeHtml(String(ntg.number))}` : null,
+    ntg["end-reason"] ? `ended: ${escapeHtml(ntg["end-reason"])}` : null,
+    ntg["tail-not-settled"] ? `<strong>tail not settled</strong>` : null,
+    phases || null,
+    run.wan ? `emulator path “${escapeHtml(run.wan.path)}”` : null,
+    run.wan && run.wan.buffers ? `emulator buffer failures ${fmtNum(run.wan.buffers.failures)}` : null,
+  ].filter(Boolean);
+  return `<div class="metrics-run-meta">${parts.join(" · ")}</div>`;
+}
+
+function describeImpairment(imp) {
+  if (!imp) return "";
+  const dirs = EMULATOR_DIRECTIONS.filter((d) => imp[d])
+    .map((d) => `${d}: ${Object.entries(imp[d]).map(([k, v]) => `${k} ${v}`).join(", ")}`)
+    .join(" · ");
+  return `<div class="metrics-impairment">WAN emulator engine ${escapeHtml(String(imp.engine ?? "?"))},
+    path “${escapeHtml(imp.path || "?")}” — ${escapeHtml(dirs)}</div>`;
+}
+
+function renderMetrics(test) {
+  const m = test.metrics;
+  if (!m) return "";
+  const runs = (m.runs || [])
+    .map(
+      (r) => `
+      <h4>${escapeHtml(r.label)} run: what each box counted</h4>
+      ${renderRunMeta(r)}
+      ${renderWitnessTable(r)}
+      ${renderPortRateTable(r.ntg)}`
+    )
+    .join("");
+  const charts = test.metrics_file
+    ? `<h4>Per second</h4>
+       <div class="metrics-charts" data-metrics-file="${escapeAttr(test.metrics_file)}">
+         <p class="test-desc">Loading per-second data…</p></div>`
+    : "";
+  return `
+    <div class="metrics">
+      ${describeImpairment(m.impairment)}
+      ${renderChecksTable(m.checks)}
+      ${runs}
+      ${charts}
+    </div>`;
+}
+
+// --- Line chart (inline SVG, no library) ---------------------------------
+//
+// series: [{name, color: "var(--series-1)", dash: bool, points: [[x, y], …]}]
+// Thin 2px lines, recessive grid, legend with line keys, end labels,
+// crosshair + one tooltip listing every series, and a data-table toggle.
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+function lineKey(color, dash) {
+  const s = svgEl("svg", { width: 16, height: 8, "aria-hidden": "true" });
+  s.appendChild(svgEl("line", { x1: 0, y1: 4, x2: 16, y2: 4, stroke: color, "stroke-width": 2, "stroke-dasharray": dash ? "4 3" : "" }));
+  return s;
+}
+
+function niceMax(v) {
+  if (!(v > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(v));
+  for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
+}
+
+function fmtTick(v) {
+  return Math.abs(v) >= 100 ? fmtNum(v, 0) : Math.abs(v) >= 10 ? fmtNum(v, 1).replace(/\.0$/, "") : String(+v.toFixed(2));
+}
+
+function lineChart({ title, sub, unit, series }) {
+  series = series.filter((s) => s.points.length > 0);
+  const card = document.createElement("div");
+  card.className = "chart-card";
+  const t = document.createElement("div");
+  t.className = "chart-title";
+  t.textContent = title;
+  card.appendChild(t);
+  if (sub) {
+    const s = document.createElement("div");
+    s.className = "chart-sub";
+    s.textContent = sub;
+    card.appendChild(s);
+  }
+  if (series.length === 0) {
+    const p = document.createElement("p");
+    p.className = "test-desc";
+    p.textContent = "No data recorded.";
+    card.appendChild(p);
+    return card;
+  }
+  if (series.length > 1) {
+    const legend = document.createElement("div");
+    legend.className = "chart-legend";
+    for (const s of series) {
+      const item = document.createElement("span");
+      item.appendChild(lineKey(s.color, s.dash));
+      item.appendChild(document.createTextNode(s.name));
+      legend.appendChild(item);
+    }
+    card.appendChild(legend);
+  }
+
+  const W = 360, H = 160, L = 42, R = 70, T = 18, B = 20;
+  const xs = series.flatMap((s) => s.points.map((p) => p[0]));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const yMax = niceMax(Math.max(...series.flatMap((s) => s.points.map((p) => p[1]))));
+  const sx = (x) => L + ((x - x0) / (x1 - x0 || 1)) * (W - L - R);
+  const sy = (y) => T + (1 - y / yMax) * (H - T - B);
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "chart-svg", role: "img", tabindex: "0" });
+  svg.setAttribute("aria-label", `${title}. ${series.map((s) => s.name).join(", ")}. Use "Show data" for values.`);
+  for (let i = 0; i <= 4; i++) {
+    const v = (yMax * i) / 4, y = sy(v);
+    svg.appendChild(svgEl("line", { x1: L, x2: W - R, y1: y, y2: y, class: "grid" }));
+    const lbl = svgEl("text", { x: L - 6, y: y + 3.5, "text-anchor": "end", class: "axis-label" });
+    lbl.textContent = fmtTick(v);
+    svg.appendChild(lbl);
+  }
+  const unitLbl = svgEl("text", { x: L - 6, y: 9, "text-anchor": "end", class: "axis-label" });
+  unitLbl.textContent = unit;
+  svg.appendChild(unitLbl);
+  for (const xv of [x0, (x0 + x1) / 2, x1]) {
+    const lbl = svgEl("text", { x: sx(xv), y: H - 5, "text-anchor": "middle", class: "axis-label" });
+    lbl.textContent = `${fmtNum(xv, 0)} s`;
+    svg.appendChild(lbl);
+  }
+  for (const s of series) {
+    const d = s.points.map((p, i) => `${i ? "L" : "M"}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join("");
+    svg.appendChild(svgEl("path", {
+      d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round",
+      "stroke-dasharray": s.dash ? "5 4" : "",
+    }));
+  }
+  // End labels, nudged apart (upward, so they never reach the x-axis
+  // labels) when lines end close together.
+  const ends = series
+    .map((s) => ({ s, y: sy(s.points[s.points.length - 1][1]) }))
+    .sort((a, b) => b.y - a.y);
+  ends.forEach((e, i) => {
+    e.y = Math.min(e.y, H - B - 4, i ? ends[i - 1].y - 12 : Infinity);
+  });
+  for (const e of ends) {
+    const lbl = svgEl("text", { x: W - R + 6, y: e.y + 3.5, class: "end-label" });
+    lbl.textContent = e.s.name;
+    svg.appendChild(lbl);
+  }
+
+  const cross = svgEl("line", { y1: T, y2: H - B, class: "crosshair", visibility: "hidden" });
+  svg.appendChild(cross);
+  const tip = document.createElement("div");
+  tip.className = "chart-tooltip";
+  tip.hidden = true;
+  const nearest = (pts, x) => pts.reduce((a, p) => (Math.abs(p[0] - x) < Math.abs(a[0] - x) ? p : a));
+  svg.addEventListener("pointermove", (ev) => {
+    const box = svg.getBoundingClientRect();
+    const px = ((ev.clientX - box.left) / box.width) * W;
+    const xv = x0 + ((Math.min(Math.max(px, L), W - R) - L) / (W - L - R)) * (x1 - x0);
+    const snapX = nearest(series[0].points, xv)[0];
+    cross.setAttribute("x1", sx(snapX));
+    cross.setAttribute("x2", sx(snapX));
+    cross.setAttribute("visibility", "visible");
+    tip.replaceChildren();
+    const head = document.createElement("div");
+    head.className = "tt-x";
+    head.textContent = `${fmtNum(snapX, 1)} s`;
+    tip.appendChild(head);
+    for (const s of series) {
+      const row = document.createElement("div");
+      row.className = "tt-row";
+      row.appendChild(lineKey(s.color, s.dash));
+      const val = document.createElement("strong");
+      val.textContent = `${fmtTick(nearest(s.points, snapX)[1])} ${unit}`;
+      row.appendChild(val);
+      row.appendChild(document.createTextNode(s.name));
+      tip.appendChild(row);
+    }
+    tip.hidden = false;
+    const cardBox = card.getBoundingClientRect();
+    const left = ev.clientX - cardBox.left + 12;
+    tip.style.left = `${Math.min(left, cardBox.width - tip.offsetWidth - 4)}px`;
+    tip.style.top = `${ev.clientY - cardBox.top + 12}px`;
+  });
+  svg.addEventListener("pointerleave", () => {
+    cross.setAttribute("visibility", "hidden");
+    tip.hidden = true;
+  });
+  card.appendChild(svg);
+  card.appendChild(tip);
+
+  // Table view: every series at the first series' x positions.
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "link-button chart-table-toggle";
+  toggle.textContent = "Show data";
+  const wrap = document.createElement("div");
+  wrap.className = "chart-table-wrap";
+  wrap.hidden = true;
+  toggle.addEventListener("click", () => {
+    if (!wrap.firstChild) {
+      const table = document.createElement("table");
+      table.className = "metrics-table";
+      const hr = table.createTHead().insertRow();
+      for (const h of ["Time (s)", ...series.map((s) => `${s.name} (${unit})`)]) {
+        const th = document.createElement("th");
+        th.className = "num";
+        th.textContent = h;
+        hr.appendChild(th);
+      }
+      const body = table.createTBody();
+      for (const [x] of series[0].points) {
+        const tr = body.insertRow();
+        for (const v of [fmtNum(x, 1), ...series.map((s) => fmtTick(nearest(s.points, x)[1]))]) {
+          const td = tr.insertCell();
+          td.className = "num";
+          td.textContent = v;
+        }
+      }
+      wrap.appendChild(table);
+    }
+    wrap.hidden = !wrap.hidden;
+    toggle.textContent = wrap.hidden ? "Show data" : "Hide data";
+  });
+  card.appendChild(toggle);
+  card.appendChild(wrap);
+  return card;
+}
+
+// The emulator's per-second records are indexed by its own clock, which
+// starts before the NTG's run. Align them on the first second either box
+// saw traffic; good to about a second.
+function emulatorPoints(wanData, direction, metric, startX, scale = 1) {
+  const rec = (Array.isArray(wanData) ? wanData : []).find((d) => d.direction === direction && d.metric === metric);
+  const rate = (Array.isArray(wanData) ? wanData : []).find((d) => d.direction === direction && d.metric === "overall-rate");
+  if (!rec || !rate) return [];
+  const first = rate.values.findIndex((v) => v > 0);
+  if (first < 0) return [];
+  return rec.values.map((v, i) => [startX + (i - first), v * scale]).filter(([x]) => x >= startX - 1);
+}
+
+function renderSeriesCharts(record) {
+  const charts = [];
+  const runs = record.runs || [];
+  const colors = ["var(--series-1)", "var(--series-2)"];
+  charts.push(
+    lineChart({
+      title: "Average latency, NTG",
+      sub: "One line per run; the gap between them is what the emulator added.",
+      unit: "ms",
+      series: runs.slice(0, 2).map((r, i) => ({
+        name: r.label,
+        color: colors[i],
+        // Seconds with nothing received have no latency (the NTG reports
+        // 0); leave them out rather than draw a fake drop to zero.
+        points: ((r.series && r.series.ntg) || [])
+          .filter((s) => s["rx-rate"] > 0)
+          .map((s) => [s.at, (s["avg-latency"] || 0) / 1000]),
+      })),
+    })
+  );
+  for (const r of runs) {
+    const samples = (r.series && r.series.ntg) || [];
+    const firstTx = samples.find((s) => s["tx-rate"] > 0);
+    const startX = firstTx ? firstTx.at : 0;
+    ntgDirections(r.ntg).forEach((d, i) => {
+      charts.push(
+        lineChart({
+          title: `${r.label}: Port ${d.from} → ${d.to} throughput`,
+          sub: "What the NTG sent vs what the emulator carried; matching lines mean the two boxes agree.",
+          unit: "Mbps",
+          series: [
+            {
+              name: "NTG sent",
+              color: colors[0],
+              points: samples.map((s) => [s.at, ((s.port || []).find((p) => p["port-id"] === d.from) || {})["tx-rate"] || 0]),
+            },
+            {
+              name: "Emulator",
+              color: colors[1],
+              dash: true,
+              points: emulatorPoints(r.series && r.series.wan, EMULATOR_DIRECTIONS[i], "overall-rate", startX, 1e-6),
+            },
+          ],
+        })
+      );
+    });
+  }
+  return charts;
+}
+
+async function loadMetricsCharts(panel) {
+  for (const el of panel.querySelectorAll(".metrics-charts[data-metrics-file]")) {
+    try {
+      const record = await fetchJSON(el.dataset.metricsFile);
+      el.replaceChildren(...renderSeriesCharts(record));
+    } catch (err) {
+      el.innerHTML = `<p class="test-desc">Per-second data unavailable (${escapeHtml(err.message)}). It's kept only on the machine that ran the test.</p>`;
+    }
+  }
+}
+
 function renderRunDetailTestRow(test, run) {
   const areaLabel = test.area
     ? `<a href="#area/${encodeURIComponent(test.area.id)}">${escapeHtml(test.area.label)}</a>`
@@ -954,7 +1561,7 @@ function renderRunDetailTestRow(test, run) {
         </div>
         <div class="run-detail-test-actions">
           ${areaLabel}
-          <span class="pill ${outcomePillClass(test.outcome)}">${escapeHtml(test.outcome)}</span>
+          ${outcomePill(test.outcome, test.failure_kind)}
           <span class="test-desc">${formatDuration(test.duration)}</span>
           <button type="button" class="btn-outline rerun-btn"
             data-nodeid="${escapeAttr(catalogNodeid(test.nodeid))}"
@@ -964,6 +1571,7 @@ function renderRunDetailTestRow(test, run) {
       ${artifacts ? `<div class="run-detail-artifacts">${artifacts}</div>` : ""}
       ${failureBlock}
       ${renderKnownIssueMatches(test.known_issue_matches)}
+      ${renderMetrics(test)}
     </div>`;
 }
 
@@ -978,7 +1586,7 @@ function renderSiblingRuns(nodeid, rows) {
         : `<span class="muted-cell">unlinked run</span>`;
       return `<li>${codeHtml}
         <span class="test-desc">${formatTimestamp(r.timestamp)}</span>
-        <span class="pill ${outcomePillClass(r.outcome)}">${escapeHtml(r.outcome)}</span></li>`;
+        ${outcomePill(r.outcome, r.failure_kind)}</li>`;
     })
     .join("");
   return `
@@ -1031,6 +1639,7 @@ async function renderRunDetail(panel, runCode) {
     const run = await fetchJSON(`/api/runs/${encodeURIComponent(runCode)}`);
     panel.innerHTML = renderRunDetailContent(run);
     attachRunDetailHandlers(panel);
+    loadMetricsCharts(panel);
   } catch (err) {
     // Covers the backend's 404 ("Unknown run: RUN-x") and any other
     // fetch failure alike — a run-detail page that failed to load must
@@ -1090,8 +1699,20 @@ window.addEventListener("hashchange", handleHashChange);
 async function renderFindings(panel) {
   panel.innerHTML = "<p>Loading findings…</p>";
   try {
-    const { html } = await fetchJSON("/api/findings");
-    panel.innerHTML = `<div class="findings-content">${html}</div>`;
+    const { html, investigation_html: investigationHtml } = await fetchJSON("/api/findings");
+    // The ongoing investigation write-up (docs/ntg5-investigation-log.md)
+    // sits above the full findings doc, open by default.
+    const investigation = investigationHtml
+      ? `<details class="findings-section" open>
+           <summary>Current investigation — NTG 5.0 (ongoing log)</summary>
+           <div class="findings-content">${investigationHtml}</div>
+         </details>`
+      : "";
+    panel.innerHTML = `${investigation}
+      <details class="findings-section" id="all-findings" ${investigationHtml ? "" : "open"}>
+        <summary>All findings</summary>
+        <div class="findings-content">${html}</div>
+      </details>`;
   } catch (err) {
     panel.innerHTML = `<p class="test-desc">Couldn't load findings: ${escapeHtml(err.message)}</p>`;
   }

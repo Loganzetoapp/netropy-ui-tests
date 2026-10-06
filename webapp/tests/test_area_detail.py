@@ -300,6 +300,7 @@ def test_area_tests_list_reflects_latest_run_and_pass_rate(client):
         "run_code": "RUN-2",
         "timestamp": "2026-01-01T00:01:00Z",
         "outcome": "fail",
+        "failure_kind": None,
     }
 
 

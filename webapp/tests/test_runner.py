@@ -81,6 +81,25 @@ def test_headed_flag_appends_flag_to_command(tmp_path):
     assert captured_cmds[0][3] == "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login"
 
 
+def test_target_url_overrides_netropy_url_for_the_subprocess(tmp_path, monkeypatch):
+    monkeypatch.setenv("NETROPY_URL", "http://from-dotenv:8080")
+    history_dir = tmp_path / "history"
+    captured_envs = []
+
+    def _fake_run(cmd, cwd, env, capture_output, text, timeout):
+        captured_envs.append(env)
+        return _fake_subprocess_run_factory(history_dir, "pass")(
+            cmd, cwd, env, capture_output, text, timeout
+        )
+
+    runner = TestRunner(repo_root=tmp_path, history_dir=history_dir, subprocess_run=_fake_run)
+    nodeid = "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login"
+    list(runner.events(runner.start(nodeid, "hardware_free", 1, target_url="http://10.9.9.9")))
+    list(runner.events(runner.start(nodeid, "hardware_free", 1)))
+    assert captured_envs[0]["NETROPY_URL"] == "http://10.9.9.9"
+    assert captured_envs[1]["NETROPY_URL"] == "http://from-dotenv:8080"
+
+
 def test_headed_defaults_false_and_omits_flag(tmp_path):
     history_dir = tmp_path / "history"
     captured_cmds = []

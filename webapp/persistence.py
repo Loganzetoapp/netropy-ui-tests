@@ -129,6 +129,7 @@ def list_test_runs(history_dir: Path = HISTORY_DIR) -> list[dict]:
                     "timestamp": run.get("timestamp", ""),
                     "nodeid": test.get("nodeid"),
                     "outcome": test.get("outcome"),
+                    "failure_kind": test.get("failure_kind"),
                     "failure_message": test.get("failure_message"),
                 }
             )
