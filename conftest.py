@@ -500,6 +500,22 @@ def wan_page(browser) -> Page:
     context.close()
 
 
+@pytest.fixture
+def run_metrics(request):
+    """A RunMetrics (run_metrics.py) for the test to fill in. Written to
+    results/metrics/ on teardown, pass or fail, and linked into the run
+    history through the junit property `metrics`."""
+    from run_metrics import RunMetrics
+    from scripts.artifact_paths import slugify
+
+    metrics = RunMetrics(request.node.nodeid)
+    yield metrics
+    path = metrics.write(slugify(request.node.nodeid))
+    request.node.user_properties.append(
+        ("metrics", str(path.relative_to(pathlib.Path(__file__).parent)))
+    )
+
+
 def wait_for_testbeds_loaded(page: Page) -> None:
     """Block until the Testbeds section has fetched its list. On NTG 5.0
     the header reads "… " while loading and "N saved · M active" once

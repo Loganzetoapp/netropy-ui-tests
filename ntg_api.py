@@ -76,6 +76,11 @@ class NtgApi:
         return self._get("/tests")["tests"]
 
     # --- one testbed --------------------------------------------------
+    def test(self, name: str) -> dict:
+        """The stored config: port[] (rate-mbps, speed-mbps, host addressing),
+        stream[], and config (load profile)."""
+        return self._get(f"/tests/{name}")
+
     def status(self, name: str) -> dict:
         return self._get(f"/tests/{name}/status")
 

@@ -26,8 +26,10 @@ METRICS = (
     "overall-rate", "overall-frames", "overall-bytes", "overall-drops",
     "wan-drops", "wan-reorders", "wan-duplicates", "wan-corruptions",
     "inflow-rate", "inflow-queue-length", "inflow-queue-drops",
-    "outflow-rate", "outflow-queue-length", "outflow-queue-drops",
+    "outflow-rate", "outflow-queue-drops",
 )
+# Note: there is no outflow-queue-length in the YANG enum; asking for an
+# unknown metric gets a bare 500.
 
 
 class WanApi:

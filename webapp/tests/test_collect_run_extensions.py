@@ -103,3 +103,76 @@ def test_next_run_code_recovers_from_corrupt_counter_file(tmp_path):
     history_dir.mkdir(parents=True)
     (history_dir / ".run_seq").write_text("not-a-number")
     assert _next_run_code(history_dir) == "RUN-1"
+
+
+def test_system_failure_kind_is_recorded_from_junit_property(tmp_path):
+    """conftest.py tags SystemBadStateError failures with a junit
+    property; the history entry must carry it as failure_kind."""
+    import xml.etree.ElementTree as ET
+
+    from scripts.collect_run import _parse_testcase
+
+    tc = ET.fromstring(
+        '<testcase classname="tests.t14.test_x" name="test_a" time="1.0">'
+        '<properties><property name="failure_kind" value="system"/></properties>'
+        '<failure message="Unit unhealthy: top bar shows \'offline\'">x</failure>'
+        "</testcase>"
+    )
+    assert _parse_testcase(tc, tmp_path)["failure_kind"] == "system"
+
+    plain = ET.fromstring(
+        '<testcase classname="tests.t14.test_x" name="test_b" time="1.0">'
+        '<failure message="assert 1 == 2">x</failure></testcase>'
+    )
+    assert "failure_kind" not in _parse_testcase(plain, tmp_path)
+
+
+# --- run_metrics (measured numbers) ---
+#
+# Tests using the run_metrics fixture attach their metrics file's path as
+# a junit property; history keeps the record minus per-second series.
+
+
+def _write_junit_with_metrics(path: Path, metrics_path: str) -> None:
+    path.write_text(
+        '<?xml version="1.0"?>'
+        '<testsuites><testsuite time="1.5">'
+        '<testcase classname="tests.t15.test_x" name="test_x" time="1.5" file="tests/t15/test_x.py">'
+        f'<properties><property name="metrics" value="{metrics_path}" /></properties>'
+        "</testcase></testsuite></testsuites>"
+    )
+
+
+def test_metrics_are_recorded_without_series(tmp_path):
+    import json
+
+    record = {
+        "test": "tests/t15/test_x.py::test_x",
+        "impairment": {"a-to-b": {"delay": "constant 50 ms"}},
+        "runs": [{"label": "delayed", "ntg": {"summary": {"avg-latency": 50223}}, "series": {"ntg": [1, 2, 3]}}],
+        "checks": [{"name": "latency", "expected": 50, "measured": 50.0, "ok": True, "enforced": True}],
+    }
+    metrics_file = tmp_path / "metrics.json"
+    metrics_file.write_text(json.dumps(record))
+    junit = tmp_path / "junit.xml"
+    _write_junit_with_metrics(junit, str(metrics_file))
+
+    entry = build_summary(
+        junit, artifacts_dir=tmp_path / "artifacts", history_dir=tmp_path / "history"
+    )["tests"][0]
+
+    assert entry["metrics_file"] == str(metrics_file)
+    assert entry["metrics"]["checks"] == record["checks"]
+    assert entry["metrics"]["runs"] == [{"label": "delayed", "ntg": {"summary": {"avg-latency": 50223}}}]
+
+
+def test_unreadable_metrics_file_is_ignored(tmp_path):
+    junit = tmp_path / "junit.xml"
+    _write_junit_with_metrics(junit, str(tmp_path / "missing.json"))
+
+    entry = build_summary(
+        junit, artifacts_dir=tmp_path / "artifacts", history_dir=tmp_path / "history"
+    )["tests"][0]
+
+    assert entry["outcome"] == "pass"
+    assert "metrics" not in entry

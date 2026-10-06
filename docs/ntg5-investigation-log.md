@@ -156,6 +156,28 @@ separately:
 
 ## Log
 
+### 2026-10-05 — step 2: both boxes' numbers in the run history; Port 4 bug confirmed
+- T15 now records, per run, the NTG's saved run and stored config (API) and
+  Engine 2's counters and per-second series. Compact numbers go to
+  `results/history/`; the full record goes to `results/metrics/` (git-ignored).
+  T15 passed 2/2 with it.
+- **The emulator's counters are right.** Frame accounting matches exactly in
+  every run (902,220 = 902,220 and 90,222 = 90,222), and emulator a→b is NTG
+  Port 3→4. The "1/10 b→a" lead was real traffic, not a counting error.
+- **Confirmed product bug: NTG Port 4 transmits ~1/10 of its configured rate
+  and the run still PASSes with 0 % loss.** Both ports are stored as
+  `rate-mbps: 500`. Port 3 sends 465.5 Mbps average (with the 2 s ramps) and
+  Port 4 sends **46.5 Mbps** (90,222 vs 902,220 frames), 4/4 runs. Loss only
+  compares sent with received, so the shortfall never shows in the verdict.
+  Same symptom as finding #4, now measured by two independent boxes.
+- **Likely cause (hypothesis, fits the numbers exactly):** the testbed stores
+  Port 4 as `speed-mbps: 10000`, the NTG port list reports Port 4 at
+  `speed-mbps: 0`, and the emulator port it's cabled to links at 1000 Mbps.
+  If the NTG paces a port as a fraction of its nominal 10G (500/10000 = 5 %)
+  but the NIC actually runs at 1G, 5 % of 1G = 50 Mbps. To confirm: fix the
+  Port 4 link to 10G (cable/SFP/emulator port), or test another rate (e.g.
+  200 Mbps should give ~20).
+
 ### 2026-10-05 — read-only API clients; two leads from the emulator's counters
 - Added `ntg_api.py` and `wan_api.py` (step 1 of docs/wan-integration-plan.md).
   Both only read. The NTG login returns a `session-token` that must be sent

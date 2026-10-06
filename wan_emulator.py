@@ -38,6 +38,7 @@ WAN_PASS = os.environ.get("WAN_EMULATOR_PASS", "")
 
 # Emulator engine that sits between NTG Port 3 and Port 4.
 NTG_ENGINE = "Engine 2"
+ENGINE_INDEX = 2  # the same engine, as the API numbers it
 
 # A new path's access links default to 128 Kbps, which would throttle any
 # NTG run to nothing. Delay-only paths open them up to the port speed.

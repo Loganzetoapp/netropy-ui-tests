@@ -160,7 +160,7 @@ def _parse_testcase(tc: ET.Element, artifacts_dir: Path) -> dict:
 
     failure_message = msg.strip()[:FAILURE_MESSAGE_LIMIT] if msg else None
 
-    return {
+    result = {
         "nodeid": nodeid,
         "outcome": outcome,
         "duration": duration,
@@ -168,6 +168,35 @@ def _parse_testcase(tc: ET.Element, artifacts_dir: Path) -> dict:
         "screenshot": _screenshot_for(nodeid, artifacts_dir),
         "trace": _trace_for(nodeid, artifacts_dir),
     }
+    # conftest.py tags failures caused by the unit itself being unhealthy
+    # (SystemBadStateError) as failure_kind=system — kept apart from
+    # ordinary test failures in the history and the dashboard.
+    if outcome in ("fail", "error"):
+        for prop in tc.iter("property"):
+            if prop.get("name") == "failure_kind" and prop.get("value"):
+                result["failure_kind"] = prop.get("value")
+    # Tests using the run_metrics fixture (run_metrics.py) attach the path
+    # of their full metrics file; history keeps it minus per-second series.
+    for prop in tc.iter("property"):
+        if prop.get("name") == "metrics" and prop.get("value"):
+            result.update(_metrics_for(prop.get("value")))
+    return result
+
+
+def _metrics_for(rel_path: str) -> dict:
+    """{"metrics": digest, "metrics_file": path} for a run_metrics file, or
+    {} if it can't be read (never let collection fail over it)."""
+    try:
+        record = json.loads((ROOT / rel_path).read_text())
+    except Exception:
+        return {}
+    # Same as run_metrics.history_digest (inlined: this script also runs
+    # standalone, without the repo root on sys.path).
+    digest = {k: v for k, v in record.items() if k != "runs"}
+    digest["runs"] = [
+        {k: v for k, v in run.items() if k != "series"} for run in record.get("runs", [])
+    ]
+    return {"metrics": digest, "metrics_file": rel_path}
 
 
 def _next_run_code(history_dir: Path = DEFAULT_HISTORY_DIR) -> str:
@@ -255,6 +284,7 @@ def build_summary(
         "git_sha": _git("rev-parse", "--short", "HEAD") or "unknown",
         "git_branch": _git("rev-parse", "--abbrev-ref", "HEAD") or "unknown",
         "markers": markers or "",
+        "target": os.environ.get("NETROPY_URL", ""),
         "duration": round(total_duration, 3),
         "tests": tests,
     }
