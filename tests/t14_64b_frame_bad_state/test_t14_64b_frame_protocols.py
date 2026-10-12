@@ -46,24 +46,9 @@ Never run without the user explicitly asking (CLAUDE.md).
 import pytest
 from playwright.sync_api import Page
 
-from conftest import (
-    SystemBadStateError,
-    add_stream,
-    assert_activatable_name,
-    assert_unit_healthy,
-    create_testbed,
-    enable_ports,
-    open_editor,
-    remove_testbed,
-    run_verdict,
-    set_all_frame_sizes,
-    set_ramp,
-    start_testbed,
-    wait_for_run_to_finish,
-)
+from pages import DashboardPage, PortSpec, StreamSpec, SystemBadStateError, TestbedSpec, UnitHealth
 
-PORTS = ["Port 3", "Port 4"]
-RATE_MBPS = "500"
+RATE_MBPS = 500
 FRAME_BYTES = 64
 
 # (Add Stream picker label, testbed name, frame bytes). Safe-by-report
@@ -84,8 +69,6 @@ CASES = [
 CASE_IDS = [
     "canary-UDP-1500B" if c is CANARY else c[0].replace(" (", "-").rstrip(")") for c in CASES
 ]
-for _, _name, _ in CASES:
-    assert_activatable_name(_name)
 
 # First system failure seen in this module: {"test": nodeid, "reason": str}.
 _unit_broken: dict = {}
@@ -108,7 +91,7 @@ def _teardown(page: Page, name: str) -> None:
     failed cleanup is expected and only reported, not raised — it would
     otherwise bury the real (system) failure under a teardown error."""
     try:
-        remove_testbed(page, name)
+        DashboardPage(page).remove_testbed(name)
     except Exception as exc:
         if _unit_broken:
             print(f"[T14] cleanup of {name} failed on an unhealthy unit: {exc}")
@@ -116,34 +99,20 @@ def _teardown(page: Page, name: str) -> None:
             raise
 
 
-def _run_case(page: Page, request, protocol: str, name: str, frame: int) -> None:
+def _run_case(page: Page, engine, request, protocol: str, name: str, frame: int) -> None:
+    health = UnitHealth(page)
+    spec = TestbedSpec(ports={3: PortSpec(rate=RATE_MBPS, unit="Mbps"), 4: PortSpec(rate=RATE_MBPS, unit="Mbps")},
+                       streams=[StreamSpec(protocol)], frame_size=frame, ramp=(2, 15, 2))
     try:
-        assert_unit_healthy(page, context=f"before {protocol} {frame}B")
-        create_testbed(page, name)
-        open_editor(page, name)
-        enable_ports(page, PORTS, rate=RATE_MBPS, unit="Mbps")
-        add_stream(page, protocol)
-        set_all_frame_sizes(page, frame)
-        set_ramp(page, up=2, hold=15, down=2)
-        try:
-            start_testbed(page)
-            run = wait_for_run_to_finish(page, timeout=19_000 + 3 * 60_000)
-        except SystemBadStateError:
-            # A lost run is a system failure for this case. Only stop the
-            # rest of the sweep if the unit itself is now unhealthy — on
-            # 2026-10-01 a DNS run lost its stats while the unit stayed fine.
-            assert_unit_healthy(page, context=f"after {protocol} {frame}B lost its run")
-            raise
-        except Exception as exc:
-            # A start or run that goes wrong: decide whether the unit itself
-            # is now unhealthy (system failure) or this was an ordinary failure.
-            assert_unit_healthy(page, context=f"after {protocol} {frame}B start/run failed: {exc}")
-            raise
-        # Read the saved run before the health check navigates away from it.
-        verdict, row_text = run_verdict(run), run.inner_text()
-        print(f"[T14] {protocol} {frame}B saved run: {row_text!r}")
-        assert_unit_healthy(page, context=f"after {protocol} {frame}B run")
-        assert verdict == "pass", f"run verdict {verdict!r}; saved run row: {row_text!r}"
+        health.assert_healthy(context=f"before {protocol} {frame}B")
+        engine.create(name, spec)
+        # engine.start/wait already turn a failed start or a lost run into a
+        # SystemBadStateError when the unit is unhealthy (pages/unit_health.py).
+        engine.start(name)
+        result = engine.wait(name, spec)
+        print(f"[T14] {protocol} {frame}B saved run: {result.row_text!r}")
+        health.assert_healthy(context=f"after {protocol} {frame}B run", testbed=name)
+        result.assert_passed()
     except BaseException as exc:
         _record_if_system_failure(request, exc)
         raise
@@ -164,6 +133,6 @@ def case_testbed(dashboard: Page, request):
 
 @pytest.mark.stateful
 @pytest.mark.parametrize("case", CASES, ids=CASE_IDS)
-def test_t14_64b_frames_leave_unit_healthy(dashboard: Page, case_testbed, case, request):
+def test_t14_64b_frames_leave_unit_healthy(dashboard: Page, case_testbed, traffic_engine, case, request):
     protocol, name, frame = case
-    _run_case(dashboard, request, protocol, name, frame)
+    _run_case(dashboard, traffic_engine, request, protocol, name, frame)

@@ -68,6 +68,27 @@ class DashboardPage(BasePage):
         # Anchored: "Port 3" must not also match a row whose text mentions it.
         return self.page.get_by_role("row", name=re.compile(rf"^{port_label(port)}\b"))
 
+    def first_unreserved_port(self):
+        """The lowest-numbered port showing "Unreserved", or None."""
+        for n in range(1, 9):
+            if self.port_row(n).get_by_text("Unreserved", exact=True).is_visible():
+                return n
+        return None
+
+    def reserve_port(self, port) -> None:
+        row = self.port_row(port)
+        row.get_by_role("button", name="Reserve", exact=True).click()
+        expect(row.get_by_text("Reserved", exact=True)).to_be_visible()
+        expect(row.get_by_role("button", name="Release", exact=True)).to_be_visible()
+
+    def release_port(self, port) -> None:
+        """Release a port this test reserved by hand (plain reservation, no
+        testbed). Never call this on a port you didn't reserve."""
+        row = self.port_row(port)
+        row.get_by_role("button", name="Release", exact=True).click()
+        expect(row.get_by_text("Unreserved", exact=True)).to_be_visible()
+        expect(row.get_by_role("button", name="Reserve", exact=True)).to_be_visible()
+
     @staticmethod
     def port_holders(ports, own_testbed: str = None) -> dict:
         """{port number: "testbed 'X' (user)"} for each of `ports` held by
@@ -99,9 +120,11 @@ class DashboardPage(BasePage):
         never also matches "T10-AB"). The page fixture pins card view."""
         return self.page.locator(".tb-tile").filter(has=self.page.get_by_text(name, exact=True))
 
-    def create_testbed(self, name: str):
-        """Create an inactive Traffic Engine draft; returns its tile."""
-        assert len(name) <= settings.MAX_TESTBED_NAME_LEN, (
+    def create_testbed(self, name: str, activatable: bool = True):
+        """Create an inactive Traffic Engine draft; returns its tile. With
+        `activatable` (the default) the name must fit the 15-char limit
+        that activation needs; drafts that are never started may skip it."""
+        assert not activatable or len(name) <= settings.MAX_TESTBED_NAME_LEN, (
             f"Testbed name {name!r} is over {settings.MAX_TESTBED_NAME_LEN} chars; "
             "the unit saves it but 502s on activate."
         )
@@ -113,6 +136,24 @@ class DashboardPage(BasePage):
         expect(tile).to_have_count(1, timeout=10_000)
         return tile
 
+    def open_draft(self, name: str, ports=(), step: int = None, network_view: str = None):
+        """A fresh draft `name` (any old one removed) open in the editor,
+        with `ports` enabled and step `step` expanded; returns the editor.
+        For hardware-free tests: a draft reserves nothing."""
+        from pages.testbed_editor_page import TestbedEditorPage
+
+        self.remove_testbed(name)
+        self.create_testbed(name, activatable=False)
+        self.open_editor(name)
+        editor = TestbedEditorPage(self.page)
+        for port in ports:
+            editor.set_port_enabled(port, True)
+        if step:
+            editor.open_step(step)
+        if network_view:
+            editor.set_network_view(network_view)
+        return editor
+
     def open_editor(self, name: str) -> None:
         self.testbed_entry(name).get_by_role("button", name="Edit").click()
         expect(self.page.get_by_role("heading", name="Ports")).to_be_visible(timeout=15_000)
@@ -122,6 +163,50 @@ class DashboardPage(BasePage):
         expect(self.page.get_by_role("heading", name=re.compile(r"^Statistics"))).to_be_visible(
             timeout=30_000
         )
+
+    def tile_button(self, name: str, label: str):
+        return self.testbed_entry(name).get_by_role("button", name=label, exact=True)
+
+    def is_running(self, name: str):
+        """A locator that is visible exactly while `name` has traffic running."""
+        return self.tile_button(name, "Stop")
+
+    def keeps_running(self, name: str, seconds: int) -> None:
+        """Assert `name` stays live (Stop visible) for `seconds` more,
+        checked every second: catches a run that silently ends early."""
+        stop = self.is_running(name)
+        for elapsed in range(seconds):
+            assert stop.count() == 1 and stop.is_visible(), (
+                f"{name}: run ended {elapsed}s into a {seconds}s keep-running check. "
+                f"Toasts: {self.toasts()!r}"
+            )
+            self.page.wait_for_timeout(1_000)  # poll interval
+
+    def start_from_tile(self, name: str, timeout: int = 90_000) -> None:
+        from pages.testbed_editor_page import TestbedEditorPage
+
+        TestbedEditorPage(self.page).start(self.tile_button(name, "Start"), timeout)
+
+    def stop_from_tile(self, name: str, timeout: int = 30_000) -> None:
+        stop = self.tile_button(name, "Stop")
+        expect(stop).to_be_visible(timeout=15_000)
+        stop.click()
+        expect(stop).to_have_count(0, timeout=timeout)
+
+    def clone_testbed(self, name: str, new_name: str):
+        """The tile's "Clone (without ports)" icon -> name -> Clone."""
+        self.testbed_entry(name).locator('[data-tip*="Clone" i] button').click()
+        field = self.page.locator(".modal-overlay").get_by_role("textbox").first
+        field.fill(new_name)
+        self.page.get_by_role("button", name="Clone", exact=True).click()
+        tile = self.testbed_entry(new_name)
+        expect(tile).to_have_count(1, timeout=15_000)
+        return tile
+
+    def reports_button(self, name: str):
+        """5.0.9: a button labelled with the saved-run count ("1"), tooltip
+        "View saved runs on the Stats page"."""
+        return self.testbed_entry(name).get_by_role("button", name=re.compile(r"^\d+$"))
 
     def remove_testbed(self, name: str) -> None:
         """Stop, deactivate (frees its ports) and delete testbed `name` if it

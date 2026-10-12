@@ -26,46 +26,22 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import (
-    add_stream,
-    assert_activatable_name,
-    create_testbed,
-    enable_ports,
-    go_to_dashboard,
-    open_editor,
-    remove_testbed,
-    set_ramp,
-    start_testbed,
-    testbed_tile,
-)
+from pages import PortSpec, StreamSpec, TestbedSpec
 
-# Testbed name must stay <= 15 chars: the backend can create and save a
-# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 NAME = "T10-LiveView"
-assert_activatable_name(NAME)
-PORTS = ["Port 1", "Port 2"]
-
-
-@pytest.fixture
-def clean_testbed(dashboard: Page):
-    remove_testbed(dashboard, NAME)
-    yield
-    remove_testbed(dashboard, NAME)
+SPEC = TestbedSpec(ports={1: PortSpec(rate=1), 2: PortSpec(rate=1)},
+                   streams=[StreamSpec("UDP")], ramp=(5, 15, 5))
 
 
 @pytest.mark.stateful
-def test_t10_live_badges_and_t11_stats_controls(dashboard: Page, clean_testbed):
-    page = dashboard
+def test_t10_live_badges_and_t11_stats_controls(dashboard: Page, traffic_engine):
+    page, board = dashboard, traffic_engine.dashboard
     testbeds_hdr = page.locator(".card-hdr").filter(has_text="Testbeds")
     before = re.search(r"(\d+) active", testbeds_hdr.inner_text())
     active_before = int(before.group(1)) if before else 0
 
-    create_testbed(page, NAME)
-    open_editor(page, NAME)
-    enable_ports(page, PORTS, rate="1", unit="Gbps")
-    add_stream(page, "UDP")
-    set_ramp(page, up=5, hold=15, down=5)
-    start_testbed(page)
+    traffic_engine.create(NAME, SPEC)
+    traffic_engine.start(NAME)
 
     # --- Live: badges + dashboard active counter + non-zero per-port table ---
     expect(page.get_by_role("heading", name=re.compile(r"^Statistics"))).to_be_visible(timeout=15_000)
@@ -74,10 +50,10 @@ def test_t10_live_badges_and_t11_stats_controls(dashboard: Page, clean_testbed):
     # badge's "LIVE ·" separator instead.
     expect(page.get_by_text("LIVE ·", exact=False)).to_be_visible(timeout=15_000)
 
-    go_to_dashboard(page)
+    board.open()
     expect(testbeds_hdr).to_contain_text(f"{active_before + 1} active")
 
-    testbed_tile(page, NAME).get_by_role("button", name="Stats").click()
+    board.tile_button(NAME, "Stats").click()
     per_port_heading = page.get_by_text("Per-Port Aggregate Statistics", exact=False)
     expect(per_port_heading).to_be_visible(timeout=15_000)
     # "Port 1" also matches the Stream Statistics table further down —
@@ -89,13 +65,14 @@ def test_t10_live_badges_and_t11_stats_controls(dashboard: Page, clean_testbed):
         row_text = port1_row.inner_text().replace("Port 1", "")
         if re.search(r"[1-9]", row_text):
             break
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(500)  # poll interval
     else:
         raise AssertionError(f"Port 1 row never showed nonzero traffic while running: {row_text!r}")
 
     # --- Natural completion: still ACTIVE, now IDLE ---
     expect(page.get_by_text("LIVE · IDLE", exact=True)).to_be_visible(timeout=45_000)
     expect(page.locator(".pill", has_text="active")).to_be_visible()
+    traffic_engine.record(NAME, expected_seconds=SPEC.run_seconds)
 
     # --- T11 stats view controls (only present while ACTIVE) ---
     for tab_name in ["Packet Rate", "Latency", "Frame Loss", "Jitter", "Throughput"]:

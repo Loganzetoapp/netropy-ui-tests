@@ -16,65 +16,55 @@ There's nothing to block because the second tab already owns it. This
 is a genuine environmental limitation, not a shortcut: worth relaying
 to Travis if a second test account ever becomes available, so the
 literal cross-user scenario can be covered.
+
+On pages/ (2026-10-11): the second tab is a second context from the same saved session.
 """
 import json
-import os
-import pathlib
 
 import pytest
-from dotenv import load_dotenv
 from playwright.sync_api import Page, expect
 
-load_dotenv()
-BASE_URL = os.environ["NETROPY_URL"].rstrip("/")
-STATE_FILE = pathlib.Path(__file__).parent.parent.parent / ".auth_state.json"
-SESSION_STORAGE_FILE = (
-    pathlib.Path(__file__).parent.parent.parent / ".auth_session_storage.json"
-)
+from conftest import SESSION_STORAGE_FILE, STATE_FILE
+from pages import DashboardPage, settings
 
 
-def _first_available_port(page: Page) -> str:
-    for n in range(1, 9):
-        row = page.get_by_role("row", name=f"Port {n}")
-        if row.get_by_text("Unreserved", exact=True).is_visible():
-            return f"Port {n}"
-    pytest.skip("No available port found — all 8 may be reserved by other users")
+@pytest.fixture
+def free_port(dashboard: Page):
+    """A port nobody holds; released again afterwards if this test left it
+    reserved (it only ever releases the port it picked)."""
+    board = DashboardPage(dashboard)
+    port = board.first_unreserved_port()
+    if port is None:
+        pytest.skip("No unreserved port: all 8 may be held by other users")
+    yield port
+    if board.port_row(port).get_by_role("button", name="Release", exact=True).is_visible():
+        board.release_port(port)
 
 
 @pytest.mark.stateful
-def test_t3_second_tab_same_account_sees_own_reservation_not_a_conflict(dashboard: Page):
-    page_a = dashboard
-    port_label = _first_available_port(page_a)
-    row_a = page_a.get_by_role("row", name=port_label)
+def test_t3_second_tab_same_account_sees_own_reservation_not_a_conflict(dashboard: Page, free_port):
+    board_a = DashboardPage(dashboard)
+    board_a.reserve_port(free_port)
 
-    row_a.get_by_role("button", name="Reserve").click()
-    expect(row_a.get_by_text("Reserved", exact=True)).to_be_visible()
-
-    # A second, independent context using the same saved auth state — the
-    # `dashboard` fixture's own context/page fixture pattern, replicated
-    # here since a second concurrent session can't reuse the first one's
-    # single `page`.
     session_storage = json.loads(SESSION_STORAGE_FILE.read_text())
     init_script = "".join(
         f"window.sessionStorage.setItem({json.dumps(k)}, {json.dumps(v)});"
         for k, v in session_storage.items()
     )
-    context_b = page_a.context.browser.new_context(
-        base_url=BASE_URL, storage_state=str(STATE_FILE)
+    context_b = dashboard.context.browser.new_context(
+        base_url=settings.NTG_URL, storage_state=str(STATE_FILE)
     )
     try:
         context_b.add_init_script(init_script)
         page_b = context_b.new_page()
-        page_b.goto("/")
-        expect(page_b.get_by_text("Port Status")).to_be_visible()
-
-        row_b = page_b.get_by_role("row", name=port_label)
+        board_b = DashboardPage(page_b)
+        board_b.open()
+        row_b = board_b.port_row(free_port)
         expect(row_b.get_by_text("Reserved", exact=True)).to_be_visible()
-        expect(row_b).to_contain_text("test")
-        expect(row_b.get_by_role("button", name="Reserve")).to_have_count(0)
-        expect(row_b.get_by_role("button", name="Release")).to_be_visible()
+        expect(row_b).to_contain_text(settings.NTG_USER)
+        expect(row_b.get_by_role("button", name="Reserve", exact=True)).to_have_count(0)
+        expect(row_b.get_by_role("button", name="Release", exact=True)).to_be_visible()
     finally:
         context_b.close()
 
-    row_a.get_by_role("button", name="Release").click()
-    expect(row_a.get_by_text("Unreserved", exact=True)).to_be_visible()
+    board_a.release_port(free_port)

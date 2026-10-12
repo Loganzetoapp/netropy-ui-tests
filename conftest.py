@@ -273,7 +273,21 @@ def run_metrics(request):
 
 
 @pytest.fixture
-def traffic_engine(dashboard: Page, run_metrics):
+def clean_up(dashboard: Page, request):
+    """Remove the module's draft testbed(s) before and after the test:
+    `NAME`, plus any in an optional `CLEANUP_NAMES` list. Hardware-free
+    tests use this with DashboardPage.open_draft()."""
+    names = list(getattr(request.module, "CLEANUP_NAMES", ())) or [request.module.NAME]
+    board = DashboardPage(dashboard)
+    for name in names:
+        board.remove_testbed(name)
+    yield
+    for name in names:
+        board.remove_testbed(name)
+
+
+@pytest.fixture
+def traffic_engine(dashboard: Page, run_metrics, request):
     """The high-level library (pages/traffic_engine.py) on a logged-in
     dashboard, recording onto this test's summary sheet. Teardown removes
     every testbed it created, and only those. Ports held by someone else
@@ -281,10 +295,17 @@ def traffic_engine(dashboard: Page, run_metrics):
     from pages.traffic_engine import TrafficEngine
 
     engine = TrafficEngine(dashboard, run_metrics)
+    yield engine
     try:
-        yield engine
-    finally:
         engine.cleanup()
+    except Exception as exc:
+        rep = getattr(request.node, "rep_call", None)
+        if rep is not None and rep.failed:
+            # The test already failed (maybe the unit is down); a cleanup
+            # error now would only bury that failure under a teardown one.
+            print(f"[traffic_engine] cleanup after a failed test also failed: {exc}")
+        else:
+            raise
 
 
 def wait_for_testbeds_loaded(page: Page) -> None:

@@ -59,6 +59,26 @@ class RunPage(BasePage):
         verdict = self.verdict(row)
         assert verdict == "pass", f"run verdict {verdict!r}; saved run row: {row.inner_text()!r}"
 
+    def rows(self):
+        return self.page.get_by_role("row").filter(has_text=re.compile(r"^\s*#\d+"))
+
+    def export(self, row, fmt: str):
+        """Click a run row's export button (PDF / XLSX / CSV / JSON / FULL /
+        ZIP) and return the Download."""
+        with self.page.expect_download(timeout=30_000) as download:
+            row.get_by_role("button", name=fmt, exact=True).click()
+        return download.value
+
+    def delete_run(self, row) -> None:
+        row.get_by_role("button", name="Delete run").click()
+        confirm = self.page.get_by_role("button", name="Delete", exact=True)
+        try:
+            confirm.last.wait_for(state="visible", timeout=2_000)
+            confirm.last.click()
+        except Exception:
+            pass
+        expect(row).to_have_count(0, timeout=15_000)
+
     def state(self) -> str:
         header = self.page.locator("h1, h2").first.locator("xpath=..").inner_text()[:300]
         status = self.page.get_by_text(

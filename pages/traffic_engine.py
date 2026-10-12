@@ -119,8 +119,16 @@ class TrafficEngine:
             # A lost run is a system failure; say whether the unit is still up.
             self.health.assert_healthy(context=f"{name} run #{run_number} lost", testbed=name)
             raise
+        return self.result(name, row, label, expected_seconds=spec.run_seconds,
+                           expect_traffic=spec.expect_traffic)
+
+    def result(self, name: str, row, label: str = "run", expected_seconds: float = None,
+               expect_traffic: bool = True, run_id: str = None) -> RunResult:
+        """A RunResult for a saved Test Reports `row`, with the run recorded
+        on the summary sheet. For tests that drive the run themselves
+        (stop mid-run, restart, ...) after building with create()/start()."""
         verdict, row_text = self.runs.verdict(row), row.inner_text()
-        digest = self.record(name, spec, label)
+        digest = self.record(name, label, expected_seconds, expect_traffic, run_id)
         return RunResult(name, verdict, row_text, digest, self.metrics)
 
     def run(self, name: str, spec: TestbedSpec, label: str = "run") -> RunResult:
@@ -129,10 +137,11 @@ class TrafficEngine:
         return self.wait(name, spec, label=label)
 
     # --- summary sheet --------------------------------------------------
-    def record(self, name: str, spec: TestbedSpec, label: str) -> Optional[dict]:
-        """Read the saved run through the API and add it, plus the standard
-        checks, to the summary sheet. Without a metrics recorder this is a
-        no-op (hardware-free use)."""
+    def record(self, name: str, label: str = "run", expected_seconds: float = None,
+               expect_traffic: bool = True, run_id: str = None) -> Optional[dict]:
+        """Read the saved run (latest, or `run_id`) through the API and add
+        it, plus the standard checks, to the summary sheet. Without a
+        metrics recorder this is a no-op (hardware-free use)."""
         if self.metrics is None:
             return None
         from ntg_api import NtgApi
@@ -145,10 +154,10 @@ class TrafficEngine:
                 "model": system.get("model"), "version": system.get("version"),
                 "target": settings.NTG_URL,
             })
-        digest, saved, config = capture_ntg_run(api, name)
+        digest, saved, config = capture_ntg_run(api, name, run_id)
         self.metrics.add_run(label, ntg=digest, series={"ntg": saved.get("sample"), "ntg-config": config})
-        standard_checks(self.metrics, label, digest, expected_seconds=spec.run_seconds,
-                        expect_traffic=spec.expect_traffic)
+        standard_checks(self.metrics, label, digest, expected_seconds=expected_seconds,
+                        expect_traffic=expect_traffic)
         return digest
 
     # --- teardown -----------------------------------------------------

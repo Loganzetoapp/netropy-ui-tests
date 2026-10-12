@@ -114,445 +114,49 @@ several wizard controls have no accessible name/role/data-testid and fall
 back to CSS position (`.fc`, `.seg`, `nth-child`); the per-port line-rate
 row lookup uses a start-anchored regex to survive the "UNIT" column added
 to the wizard's Ports table.
+
+REWRITTEN 2026-10-11 on the shared pages/ library (NTG 5.0.9): the 4.0
+click sequence described above (manual Reserve, "Available", Apply,
+positional selectors) is gone; the scenario and its assertions are kept.
+Runs are recorded on the summary sheet (traffic_engine fixture).
 """
-import re
-
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page
 
-from conftest import assert_activatable_name
+from pages import PortSpec, StreamSpec, TestbedSpec
+from tests.t10_t12_lifecycle.known_issues import LIVE_RUN_INTERRUPTED
 
-# Testbed name must stay <= 15 chars: the backend can create and save a
-# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 TESTBED_NAME = "T10-EditLive"
-assert_activatable_name(TESTBED_NAME)
-PORTS = ["Port 3", "Port 4"]
-BUFFER_MS = 400
-ORIGINAL_FRAME_SIZE = "1500"
-EDITED_FRAME_SIZE = "800"
-
-
-def _buffer(page: Page):
-    page.wait_for_timeout(BUFFER_MS)
-
-
-def _testbed_tile(page: Page):
-    return page.locator(".tb-tile").filter(has_text=TESTBED_NAME)
-
-
-def _delete_testbed_if_present(page: Page):
-    tile = _testbed_tile(page)
-    if tile.count() > 0:
-        tile.locator("button").nth(2).click()
-        confirm = page.get_by_role("button", name="Delete", exact=True)
-        if confirm.is_visible():
-            confirm.click()
-        expect(_testbed_tile(page)).to_have_count(0, timeout=10000)
-
-
-def _release_ports(page: Page):
-    dashboard_btn = page.get_by_role("button", name="← Dashboard")
-    if dashboard_btn.is_visible():
-        dashboard_btn.click()
-        _buffer(page)
-        discard_btn = page.get_by_role("button", name="Discard", exact=True)
-        if discard_btn.is_visible():
-            discard_btn.click()
-    else:
-        page.goto("/")
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        release_btn = row.get_by_role("button", name="Release")
-        if release_btn.is_visible():
-            release_btn.click()
-            confirm = page.get_by_role("button", name="Deactivate & release")
-            if confirm.is_visible():
-                confirm.click()
-            expect(row.get_by_text("Available", exact=True)).to_be_visible(timeout=10000)
-
-
-@pytest.fixture
-def clean_testbed(dashboard: Page):
-    _delete_testbed_if_present(dashboard)
-    yield
-    _release_ports(dashboard)
-    _delete_testbed_if_present(dashboard)
-
-
-def _read_port3_row(page: Page) -> str:
-    """Must already be on the Statistics view. Returns Port 3's row text
-    (label stripped) from the Per-Port Aggregate Statistics table."""
-    per_port_heading = page.get_by_text("Per-Port Aggregate Statistics", exact=False)
-    expect(per_port_heading).to_be_visible(timeout=15000)
-    per_port_table = per_port_heading.locator("xpath=following::table[1]")
-    port3_row = per_port_table.get_by_role("row", name="Port 3", exact=False)
-    return port3_row.inner_text().replace("Port 3", "")
+EDITED_FRAME_SIZE = 800
+# 5/90/5 = 100s: room to act mid-run.
+SPEC = TestbedSpec(
+    ports={3: PortSpec(rate=1, ip="10.0.13.1", cidr=25), 4: PortSpec(rate=1, ip="10.0.13.2", cidr=25)},
+    streams=[StreamSpec("UDP")], frame_size=1500, ramp=(5, 90, 5),
+)
 
 
 @pytest.mark.stateful
-def test_t10_edit_config_while_active(dashboard: Page, clean_testbed):
-    page = dashboard
+@LIVE_RUN_INTERRUPTED
+def test_t10_edit_config_while_active(dashboard: Page, traffic_engine):
+    """Correct behaviour: editing a live testbed's frame size and saving
+    either is refused, or applies to the next run; the live run keeps
+    going to its natural end and its result is saved."""
+    board, ed = traffic_engine.dashboard, traffic_engine.editor
+    traffic_engine.create(TESTBED_NAME, SPEC)
+    traffic_engine.start(TESTBED_NAME)
+    board.open()
+    board.keeps_running(TESTBED_NAME, 5)
 
-    # --- Reserve Port 3 and Port 4 ---
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        expect(row.get_by_text("Available", exact=True)).to_be_visible()
-        row.get_by_role("button", name="Reserve").click()
-        _buffer(page)
-        expect(row.get_by_text("Reserved", exact=True)).to_be_visible(timeout=10000)
+    board.open_editor(TESTBED_NAME)
+    ed.set_stream_frame_size(0, EDITED_FRAME_SIZE)
+    ed.save()
+    board.open()
 
-    # --- Create testbed ---
-    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
-    _buffer(page)
-    page.get_by_role("button", name="Traffic Engine").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="e.g. web-perf-").fill(TESTBED_NAME)
-    _buffer(page)
-    page.get_by_role("button", name="Create draft").click()
-    _buffer(page)
-
-    # --- Wizard step 1: Ports — enable Port 3 & Port 4, 1 Gbps line rate ---
-    _testbed_tile(page).get_by_role("button", name="Edit").click()
-    _buffer(page)
-    page.locator("tr:nth-child(3) > td > div > .toggle > .track").click()
-    _buffer(page)
-    page.locator("tr:nth-child(4) > td > div > .toggle > .track").click()
-    _buffer(page)
-    for port_label in PORTS:
-        rate_field = page.get_by_role(
-            "row", name=re.compile(rf"^{re.escape(port_label)}\b")
-        ).get_by_placeholder("line rate")
-        rate_field.fill("1")
-        _buffer(page)
-    page.get_by_role(
-        "row", name=re.compile(r"^Port 4\b")
-    ).get_by_placeholder("line rate").press("Enter")
-    _buffer(page)
-
-    # --- Wizard step 2: Network Configuration ---
-    page.get_by_role("button", name="2 Network Configuration per-").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="10.1.0.10").first.fill("10.0.13.1")
-    _buffer(page)
-    page.locator(".seg").first.select_option("25")
-    _buffer(page)
-    page.get_by_role("textbox", name="10.1.0.10").nth(1).fill("10.0.13.2")
-    _buffer(page)
-    page.locator(
-        "div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main "
-        "> div > div:nth-child(2) > .ne-combo > select"
-    ).select_option("25")
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").nth(2).fill("10.0.13.1")
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").first.fill("10.0.13.2")
-    _buffer(page)
-
-    # --- Wizard step 3: Streams — UDP, 1500-byte frames ---
-    page.get_by_role("button", name="3 Streams traffic flows — at").click()
-    _buffer(page)
-    page.get_by_role("button", name="✚ Add Stream").click()
-    _buffer(page)
-    add_stream_btn = page.get_by_role("button", name="Add stream", exact=True)
-    if add_stream_btn.is_visible():
-        add_stream_btn.click()
-        _buffer(page)
-    expect(page.get_by_role("button", name="UDP Edit UDP").first).to_be_visible()
-    frame_size = page.locator("td:nth-child(5) > .fc").first
-    frame_size.fill(ORIGINAL_FRAME_SIZE)
-    _buffer(page)
-    frame_size.press("Enter")
-    _buffer(page)
-
-    # --- Wizard step 4: Traffic and Load Profile — 5/90/5 hold, plenty of
-    # room to act mid-run before natural completion ---
-    page.get_by_role("button", name="4 Traffic and Load Profile").click()
-    _buffer(page)
-    page.locator("div:nth-child(2) > div > .toggle > .track").click()
-    _buffer(page)
-    ramp_input = page.locator(".fc > input").first
-    if ramp_input.count() == 0 or not ramp_input.is_visible():
-        page.locator("div:nth-child(2) > div > .toggle > .track").click()
-        _buffer(page)
-    page.locator(".fc > input").first.fill("5")
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").fill("90")
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").press("Enter")
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").fill("5")
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").press("Enter")
-    _buffer(page)
-    # --- Activate + start traffic together ---
-    # UI change (2026-09-17): the draft's "Apply" (save & activate) button
-    # is gone; the bar now reads Discard Changes / Delete / Save / Start,
-    # and Start pops a "Testbed is Inactive" confirmation modal (Continue)
-    # that activates AND starts traffic in one action, landing straight in
-    # the Statistics view — no more separate armed-but-not-started
-    # "Deactivate" state to wait on before Start. See
-    # test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the full
-    # writeup.
-    page.get_by_role("button", name="Start", exact=True).click()
-    _buffer(page)
-    continue_btn = page.get_by_role("button", name="Continue", exact=True)
-    if continue_btn.is_visible():
-        continue_btn.click()
-
-    # Activation + traffic start together carry the same `?wait=15`
-    # server-side contract the old two-step flow did, so give it the same
-    # real room rather than treating slow-but-working as a failure.
-    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
-        timeout=75000
+    board.keeps_running(TESTBED_NAME, 30)
+    board.tile_button(TESTBED_NAME, "Stats").click()
+    row = traffic_engine.runs.wait_for_run_to_finish(1, timeout=SPEC.run_seconds * 1000 + 180_000)
+    result = traffic_engine.result(TESTBED_NAME, row, expected_seconds=SPEC.run_seconds)
+    result.assert_passed()
+    assert abs((result.ntg.get("duration-sec") or 0) - SPEC.run_seconds) <= 5, (
+        f"run lasted {result.ntg.get('duration-sec')}s of {SPEC.run_seconds}s"
     )
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
-
-    tile = _testbed_tile(page)
-    expect(tile.get_by_role("button", name="Stop")).to_be_visible(timeout=15000)
-
-    # --- Confirm traffic is genuinely flowing BEFORE touching anything,
-    # not just that the Stop button rendered ---
-    tile.get_by_role("button", name="Stats").click()
-    row_text_before = None
-    for _ in range(30):
-        row_text_before = _read_port3_row(page)
-        if re.search(r"[1-9]", row_text_before):
-            break
-        page.wait_for_timeout(500)
-    else:
-        raise AssertionError(
-            f"Port 3 row never showed nonzero traffic before the edit "
-            f"attempt — can't call this a genuinely live run: {row_text_before!r}"
-        )
-    print(f"[edit-while-active] Port 3 row BEFORE edit (confirmed live): {row_text_before!r}")
-
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
-
-    # --- The core of the test: open Edit on the LIVE, actively-transmitting
-    # testbed and try to change the Streams step's frame-size field ---
-    tile.get_by_role("button", name="Edit").click()
-    _buffer(page)
-    # Confirm this really is the live/active testbed's edit view
-    # (Deactivate present), not some stale/reset draft — same check as
-    # test_t10_deactivate_mid_run.py. This is a genuine assertion about
-    # the ACTIVE testbed's state, independent of the 2026-09-17 Apply/
-    # Start UI change (which only affects a never-yet-activated draft's
-    # bottom bar) — not touched for that change.
-    expect(page.get_by_role("button", name="Deactivate", exact=True)).to_be_visible(timeout=15000)
-
-    page.get_by_role("button", name="3 Streams traffic flows — at").click()
-    _buffer(page)
-    frame_size = page.locator("td:nth-child(5) > .fc").first
-    expect(frame_size).to_be_visible(timeout=10000)
-
-    value_while_live = frame_size.input_value()
-    is_disabled = frame_size.is_disabled()
-    is_readonly = frame_size.get_attribute("readonly") is not None
-    print(
-        f"[edit-while-active] Streams frame-size field while LIVE: "
-        f"value={value_while_live!r} disabled={is_disabled} readonly={is_readonly}"
-    )
-    assert value_while_live == ORIGINAL_FRAME_SIZE, (
-        f"Expected the live edit view to show the frame size this run was "
-        f"actually started with ({ORIGINAL_FRAME_SIZE!r}), got "
-        f"{value_while_live!r} — the edit view may be showing stale or "
-        f"wrong data for this testbed."
-    )
-
-    edit_was_blocked = is_disabled or is_readonly
-    save_label = None
-    error_texts = []
-
-    if edit_was_blocked:
-        print(
-            "[edit-while-active] FINDING: frame-size field is "
-            f"disabled/readonly while active (disabled={is_disabled}, "
-            f"readonly={is_readonly}) — editing is blocked at the field "
-            "level. Clean, non-bug outcome."
-        )
-    else:
-        frame_size.fill(EDITED_FRAME_SIZE)
-        _buffer(page)
-        frame_size.press("Enter")
-        _buffer(page)
-        value_after_typing = frame_size.input_value()
-        print(
-            f"[edit-while-active] Field accepted typed input while LIVE: "
-            f"now reads {value_after_typing!r} (typed {EDITED_FRAME_SIZE!r})"
-        )
-
-        # "Apply" is no longer checked as a fallback here — per the
-        # 2026-09-17 UI change it doesn't exist anywhere in this product
-        # any more (drafts now save-and-activate via "Start"), and this
-        # active-testbed action bar was already documented (see module
-        # docstring) as showing "Save", not "Apply", even before that
-        # change — so the old Apply fallback below was already unreachable
-        # in practice.
-        save_btn = page.get_by_role("button", name="Save", exact=True)
-        if save_btn.count() > 0 and save_btn.is_visible():
-            save_target, save_label = save_btn, "Save"
-        else:
-            save_target = None
-
-        assert save_target is not None, (
-            "Frame-size field was editable and accepted a new value while "
-            "the testbed was LIVE, but no 'Save' control was found in the "
-            "action bar to attempt committing it — can't tell whether this "
-            "state is even savable."
-        )
-        print(f"[edit-while-active] Clicking {save_label!r} to attempt committing the mid-run edit")
-        save_target.click()
-        _buffer(page)
-        page.wait_for_timeout(2000)  # let any backend round-trip / toast land
-
-        error_locator = page.get_by_text(
-            re.compile(
-                r"cannot|can.t|not allowed|error|failed|while (the testbed is )?active|while running",
-                re.I,
-            )
-        )
-        for i in range(min(error_locator.count(), 5)):
-            error_texts.append(error_locator.nth(i).inner_text())
-        print(f"[edit-while-active] Error/warning-like text visible after {save_label} attempt: {error_texts!r}")
-
-        # Re-read the field in place (still on this page) to see whether
-        # the click actually registered as a save vs a no-op.
-        value_after_save_click = frame_size.input_value() if frame_size.is_visible() else None
-        print(f"[edit-while-active] Frame-size field immediately after {save_label} click: {value_after_save_click!r}")
-
-    # --- Did clicking Save/Apply pop an unexpected "unsaved changes"
-    # prompt when leaving — would itself mean the save didn't register ---
-    dashboard_btn = page.get_by_role("button", name="← Dashboard")
-    dashboard_btn.click()
-    _buffer(page)
-    discard_btn = page.get_by_role("button", name="Discard", exact=True)
-    unsaved_prompt_appeared = discard_btn.is_visible()
-    if unsaved_prompt_appeared:
-        print(
-            f"[edit-while-active] FINDING: an 'Unsaved changes' prompt "
-            f"appeared navigating away right after clicking {save_label!r} "
-            "— the save click did not actually commit."
-        )
-        # Discard rather than silently re-attempting Save via a different
-        # path — this is exploratory documentation, not a workaround.
-        discard_btn.click()
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=15000)
-
-    # --- Is the run (and the testbed) still in a sane, non-corrupted
-    # state on the dashboard? ---
-    tile = _testbed_tile(page)
-    still_shows_stop = tile.get_by_role("button", name="Stop").is_visible()
-    still_active = tile.get_by_role("button", name="Stats").is_visible()
-    print(
-        f"[edit-while-active] Dashboard tile after edit attempt: "
-        f"Stop visible={still_shows_stop}, still ACTIVE (Stats present)={still_active}"
-    )
-    assert still_active, (
-        "Testbed dropped out of ACTIVE state (Stats button gone) purely as "
-        "a side effect of the mid-run edit/save attempt — the testbed was "
-        "never explicitly Deactivated or Stopped by this test at this point."
-    )
-
-    # --- If still transmitting, compare the live Per-Port row again to see
-    # whether the edit visibly changed the CURRENT run's behavior ---
-    if not edit_was_blocked:
-        tile.get_by_role("button", name="Stats").click()
-        row_text_after = _read_port3_row(page)
-        print(f"[edit-while-active] Port 3 row AFTER {save_label} attempt: {row_text_after!r}")
-        page.get_by_role("button", name="← Dashboard").click()
-        expect(page.get_by_text("Port Status")).to_be_visible()
-        tile = _testbed_tile(page)
-
-    # --- Let the run finish naturally (if it hasn't already) rather than
-    # tearing down mid-run — this is what lets us check whether the
-    # eventual recorded result was corrupted by the edit attempt. ---
-    if tile.get_by_role("button", name="Stop").is_visible():
-        expect(tile.get_by_role("button", name="Stop")).to_have_count(0, timeout=3 * 60 * 1000)
-
-    # --- Re-open Edit once more, post-completion, to see whether the typed
-    # value actually persisted server-side (not just echoed back in the
-    # same DOM node without a real round trip) ---
-    if not edit_was_blocked:
-        tile.get_by_role("button", name="Edit").click()
-        _buffer(page)
-        page.get_by_role("button", name="3 Streams traffic flows — at").click()
-        _buffer(page)
-        frame_size = page.locator("td:nth-child(5) > .fc").first
-        expect(frame_size).to_be_visible(timeout=10000)
-        persisted_value = frame_size.input_value()
-        print(
-            f"[edit-while-active] Frame-size field re-read after a fresh "
-            f"navigation (post-run): {persisted_value!r} "
-            f"(typed {EDITED_FRAME_SIZE!r}, original {ORIGINAL_FRAME_SIZE!r})"
-        )
-        if persisted_value == EDITED_FRAME_SIZE:
-            print(
-                "[edit-while-active] FINDING: the mid-run edit persisted "
-                "server-side. Whether that's a bug depends on whether it "
-                "touched the CURRENT run (see the before/after Port 3 rows "
-                "above and the run-history check below) or only queues for "
-                "the next run (legitimate, non-bug outcome)."
-            )
-        elif persisted_value == ORIGINAL_FRAME_SIZE:
-            print(
-                "[edit-while-active] FINDING: the mid-run edit did NOT "
-                "persist — reverted back to the original value. The "
-                f"{save_label} click while active was effectively a no-op "
-                "for this field, whatever it appeared to do in the moment."
-            )
-        else:
-            raise AssertionError(
-                f"Frame-size field reads a THIRD, unexpected value "
-                f"({persisted_value!r}) after the run completed — neither "
-                f"the original ({ORIGINAL_FRAME_SIZE!r}) nor the edited "
-                f"({EDITED_FRAME_SIZE!r}) value. That's its own anomaly."
-            )
-        page.get_by_role("button", name="← Dashboard").click()
-        _buffer(page)
-        discard_btn = page.get_by_role("button", name="Discard", exact=True)
-        if discard_btn.is_visible():
-            discard_btn.click()
-        expect(page.get_by_text("Port Status")).to_be_visible(timeout=15000)
-        tile = _testbed_tile(page)
-
-    # --- Run history: was the eventual result recorded at all, and does
-    # it look sane (not corrupted, not empty)? "Reports: N" only appears
-    # once deactivated; "Stats" is what an active-but-idle testbed shows
-    # instead (see netropy-ui-findings.md, "stats view and Reports badge
-    # only exist in specific activation states") — check via whichever is
-    # actually present rather than assuming deactivation happened.
-    reports_btn = tile.get_by_role("button", name="Reports:", exact=False)
-    stats_btn = tile.get_by_role("button", name="Stats", exact=True)
-    if reports_btn.is_visible():
-        reports_btn.click()
-    else:
-        stats_btn.click()
-    run_row = page.locator("table.runs-table tbody tr").first
-    expect(run_row).to_be_visible(timeout=10000)
-    cells = run_row.locator("td")
-    expect(cells.nth(1)).not_to_have_text("")  # Started At
-    expect(cells.nth(2)).not_to_have_text("")  # Duration
-    # The UDP reference test's own PASS check polls for the Result text to
-    # appear (up to 10s) rather than reading it once — the result value is
-    # known to populate a moment after a run ends, not necessarily the
-    # instant the row itself renders. Poll here too (a generous 20s) before
-    # treating an empty cell as a real finding rather than that same race.
-    result_text = ""
-    for _ in range(40):
-        result_text = cells.last.inner_text()
-        if result_text.strip():
-            break
-        page.wait_for_timeout(500)
-    print(f"[edit-while-active] Run-history row after the edit attempt: {result_text!r}")
-    assert result_text.strip(), (
-        "The Result cell for this run is still empty after a generous 20s "
-        "poll (ruling out the population-race the UDP reference test's own "
-        "PASS check guards against) — the run's recorded outcome appears "
-        "to have been genuinely lost following the mid-run edit attempt."
-    )
-
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()

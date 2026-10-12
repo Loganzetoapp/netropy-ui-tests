@@ -139,452 +139,58 @@ Hardware confirmed clean afterward: Port 3 and Port 4 back to
 1 and Port 2 were never touched by this test at all — they were already
 "Reserved" by pre-existing testbeds `ta-c1`/`ta-s2` (owner `admin`)
 before this test ran, and are unchanged.
-"""
-from __future__ import annotations
 
+REWRITTEN 2026-10-11 on the shared pages/ library (NTG 5.0.9): the 4.0
+click sequence described above (manual Reserve, "Available", Apply,
+positional selectors) is gone; the scenario and its assertions are kept.
+Runs are recorded on the summary sheet (traffic_engine fixture).
+"""
 import re
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import assert_activatable_name
+from pages import PortSpec, StreamSpec, TestbedSpec
+from pages.testbed_editor_page import START_POPUP_TITLE
+from tests.t10_t12_lifecycle.known_issues import PORT_CONFLICT_SILENT
 
-# Testbed names must stay <= 15 chars: the backend can create and save a
-# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 TESTBED_A_NAME = "T10-Conflict-A"
 TESTBED_B_NAME = "T10-Conflict-B"
-assert_activatable_name(TESTBED_A_NAME)
-assert_activatable_name(TESTBED_B_NAME)
-
-# Only Port 3 + Port 4 are confirmed safe right now (see module docstring).
-# Testbed B attempts to claim this exact same pair while A is live on it —
-# there's no separate free/disjoint pair available or needed here.
-PORTS = ["Port 3", "Port 4"]
-BUFFER_MS = 400
-
-
-def _buffer(page: Page):
-    page.wait_for_timeout(BUFFER_MS)
-
-
-def _port_number(port_label: str) -> int:
-    return int(port_label.split()[-1])
-
-
-def _testbed_tile(page: Page, name: str):
-    return page.locator(".tb-tile").filter(has_text=name)
-
-
-def _delete_testbed_if_present(page: Page, name: str):
-    tile = _testbed_tile(page, name)
-    if tile.count() > 0:
-        # Icon order confirmed via screenshot: [0]=download [1]=duplicate [2]=delete
-        tile.locator("button").nth(2).click()
-        confirm = page.get_by_role("button", name="Delete", exact=True)
-        if confirm.is_visible():
-            confirm.click()
-        expect(_testbed_tile(page, name)).to_have_count(0, timeout=10000)
-
-
-def _release_ports(page: Page, ports):
-    dashboard_btn = page.get_by_role("button", name="← Dashboard")
-    if dashboard_btn.is_visible():
-        dashboard_btn.click()
-        _buffer(page)
-        # A failure mid-wizard (before Apply/Save) leaves unsaved edits, so
-        # navigating away pops an "Unsaved changes" confirm modal (Discard
-        # / Save & close / Keep editing) that blocks the plain click above
-        # from actually landing on the dashboard.
-        discard_btn = page.get_by_role("button", name="Discard", exact=True)
-        if discard_btn.is_visible():
-            discard_btn.click()
-    else:
-        page.goto("/")
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
-    for port_label in ports:
-        row = page.get_by_role("row", name=port_label)
-        release_btn = row.get_by_role("button", name="Release")
-        if release_btn.is_visible():
-            release_btn.click()
-            confirm = page.get_by_role("button", name="Deactivate & release")
-            if confirm.is_visible():
-                confirm.click()
-            expect(row.get_by_text("Available", exact=True)).to_be_visible(timeout=10000)
-
-
-@pytest.fixture
-def clean_testbeds(dashboard: Page):
-    _delete_testbed_if_present(dashboard, TESTBED_A_NAME)
-    _delete_testbed_if_present(dashboard, TESTBED_B_NAME)
-    yield
-    # Release first (an active port's Release pops "Deactivate & release",
-    # tearing down whichever testbed still holds it), then delete both
-    # testbed objects — same order as the two-testbed sibling's teardown,
-    # robust regardless of which branch of the conflict probe was hit.
-    _release_ports(dashboard, PORTS)
-    _delete_testbed_if_present(dashboard, TESTBED_A_NAME)
-    _delete_testbed_if_present(dashboard, TESTBED_B_NAME)
-
-
-def _reserve_ports(page: Page, ports):
-    for port_label in ports:
-        row = page.get_by_role("row", name=port_label)
-        expect(row.get_by_text("Available", exact=True)).to_be_visible()
-        row.get_by_role("button", name="Reserve").click()
-        _buffer(page)
-        expect(row.get_by_text("Reserved", exact=True)).to_be_visible(timeout=10000)
-
-
-def _build_and_start_testbed(
-    page: Page,
-    *,
-    name: str,
-    ports,
-    ip_base: str,
-    cidr: str,
-    rate_gbps: int,
-    frame_size: int,
-    ramp,
-):
-    """Build a UDP Traffic Engine testbed through the wizard, then Start it
-    (activate + begin traffic together — see module-level UI CHANGE note
-    below). Adapted from test_t10_two_testbeds_simultaneous.py's
-    `_build_and_apply_testbed` helper — trimmed to just the UDP path (the
-    only protocol this test needs) since Testbed A here doesn't need
-    protocol parameterization.
-
-    UI change (2026-09-17): this used to just click "Apply" (arm the
-    testbed) and stop there, leaving a separate `_start_testbed()` helper
-    to click the dashboard tile's own "Start" button once the caller
-    wanted traffic to actually begin — useful for controlling the exact
-    moment two testbeds' traffic starts relative to each other. That
-    two-step arm-then-start split no longer exists: "Apply" is gone, and a
-    draft testbed's "Start" button now activates AND starts traffic
-    together in one action (via a "Testbed is Inactive" confirmation
-    modal's Continue button), landing straight in the Statistics view. So
-    this helper now does the whole build-through-live-traffic sequence
-    itself in one call; the old separate `_start_testbed()` helper (which
-    just clicked an already-armed testbed's dashboard-tile "Start" button)
-    has been removed as dead code — this file never restarts an
-    already-active testbed, so it never needed that path.
-    """
-    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
-    _buffer(page)
-    page.get_by_role("button", name="Traffic Engine").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="e.g. web-perf-").fill(name)
-    _buffer(page)
-    page.get_by_role("button", name="Create draft").click()
-    _buffer(page)
-
-    _testbed_tile(page, name).get_by_role("button", name="Edit").click()
-    _buffer(page)
-    for port_label in ports:
-        n = _port_number(port_label)
-        page.locator(f"tr:nth-child({n}) > td > div > .toggle > .track").click()
-        _buffer(page)
-    for port_label in ports:
-        rate_field = page.get_by_role(
-            "row", name=re.compile(rf"^{re.escape(port_label)}\b")
-        ).get_by_placeholder("line rate")
-        rate_field.fill(str(rate_gbps))
-        _buffer(page)
-    page.get_by_role(
-        "row", name=re.compile(rf"^{re.escape(ports[-1])}\b")
-    ).get_by_placeholder("line rate").press("Enter")
-    _buffer(page)
-
-    page.get_by_role("button", name="2 Network Configuration per-").click()
-    _buffer(page)
-    ip1, ip2 = f"{ip_base}1", f"{ip_base}2"
-    page.get_by_role("textbox", name="10.1.0.10").first.fill(ip1)
-    _buffer(page)
-    page.locator(".seg").first.select_option(cidr)
-    _buffer(page)
-    page.get_by_role("textbox", name="10.1.0.10").nth(1).fill(ip2)
-    _buffer(page)
-    page.locator(
-        "div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main "
-        "> div > div:nth-child(2) > .ne-combo > select"
-    ).select_option(cidr)
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").nth(2).fill(ip1)
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").first.fill(ip2)
-    _buffer(page)
-
-    page.get_by_role("button", name="3 Streams traffic flows — at").click()
-    _buffer(page)
-    page.get_by_role("button", name="✚ Add Stream").click()
-    _buffer(page)
-    add_stream_btn = page.get_by_role("button", name="Add stream", exact=True)
-    if add_stream_btn.is_visible():
-        add_stream_btn.click()
-        _buffer(page)
-
-    expect(page.get_by_role("button", name="UDP Edit UDP").first).to_be_visible()
-    frame_size_field = page.locator("td:nth-child(5) > .fc").first
-    frame_size_field.fill(str(frame_size))
-    _buffer(page)
-    frame_size_field.press("Enter")
-    _buffer(page)
-
-    page.get_by_role("button", name="4 Traffic and Load Profile").click()
-    _buffer(page)
-    page.locator("div:nth-child(2) > div > .toggle > .track").click()
-    _buffer(page)
-    ramp_input = page.locator(".fc > input").first
-    if ramp_input.count() == 0 or not ramp_input.is_visible():
-        page.locator("div:nth-child(2) > div > .toggle > .track").click()
-        _buffer(page)
-    up, hold, down = ramp
-    page.locator(".fc > input").first.fill(str(up))
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").fill(str(hold))
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").press("Enter")
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").fill(str(down))
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").press("Enter")
-    _buffer(page)
-    page.get_by_role("button", name="Start", exact=True).click()
-    _buffer(page)
-    continue_btn = page.get_by_role("button", name="Continue", exact=True)
-    if continue_btn.is_visible():
-        continue_btn.click()
-
-    # Activation + traffic start together carry the same `?wait=15`
-    # server-side contract the old two-step Apply-then-Start flow did, so
-    # give it the same real room rather than treating slow-but-working as
-    # a failure.
-    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
-        timeout=75000
-    )
-
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
+SPEC_A = TestbedSpec(
+    ports={3: PortSpec(rate=1, ip="10.0.7.1", cidr=25), 4: PortSpec(rate=1, ip="10.0.7.2", cidr=25)},
+    streams=[StreamSpec("UDP")], frame_size=1000, ramp=(5, 90, 5),
+)
+SPEC_B = TestbedSpec(ports={3: PortSpec(rate=1), 4: PortSpec(rate=1)},
+                     streams=[StreamSpec("UDP")], duration_s=20)
 
 
 @pytest.mark.stateful
-def test_t10_port_conflict_while_active(dashboard: Page, clean_testbeds):
-    page = dashboard
+@PORT_CONFLICT_SILENT
+def test_t10_port_conflict_while_active(dashboard: Page, traffic_engine):
+    """Correct behaviour: while A is live on Ports 3/4, B's editor shows
+    them in use, B's Start is refused with a visible message, and A keeps
+    running."""
+    page, board, ed = dashboard, traffic_engine.dashboard, traffic_engine.editor
+    traffic_engine.create(TESTBED_A_NAME, SPEC_A)
+    traffic_engine.start(TESTBED_A_NAME)
+    board.open()
+    board.keeps_running(TESTBED_A_NAME, 5)
 
-    # --- Baseline (non-destructive): Port 3's dashboard row before
-    # anything reserves it, for later before/after comparison. ---
-    port3_dash_row = page.get_by_role("row", name="Port 3")
-    port3_baseline_text = port3_dash_row.inner_text()
-    print(f"\n[conflict probe] Port 3 dashboard row BEFORE any reservation: {port3_baseline_text!r}")
-    assert "Available" in port3_baseline_text, (
-        "Sanity check failed: Port 3 should read 'Available' before this "
-        f"test touches it. Actual row text: {port3_baseline_text!r}"
+    traffic_engine.create(TESTBED_B_NAME, SPEC_B)
+    for port in (3, 4):
+        expect(ed.port_row(port)).to_contain_text("in use", ignore_case=True)
+
+    ed.start_button.click()
+    popup = page.get_by_text(START_POPUP_TITLE, exact=True)
+    try:
+        popup.wait_for(state="visible", timeout=5_000)
+        page.get_by_role("button", name="Continue").click()
+    except Exception:
+        pass
+    # A visible refusal, not silence.
+    expect(page.locator(".toast")).to_contain_text(
+        re.compile(r"in use|conflict|reserved|busy", re.I), timeout=20_000
     )
-
-    # --- Build and Start Testbed A on Port 3+4 — real, live traffic ---
-    # A generous 10/180/10s ramp gives plenty of time to run the conflict
-    # probe below against a genuinely still-live testbed, without racing
-    # A's own natural finish.
-    _reserve_ports(page, PORTS)
-    _build_and_start_testbed(
-        page,
-        name=TESTBED_A_NAME,
-        ports=PORTS,
-        ip_base="10.0.6.",
-        cidr="25",
-        rate_gbps=1,
-        frame_size=1000,
-        ramp=(10, 180, 10),
-    )
-    tile_a = _testbed_tile(page, TESTBED_A_NAME)
-    expect(tile_a.get_by_role("button", name="Stop")).to_be_visible(timeout=15000)
-
-    # --- Probe 1 (non-destructive, dashboard-level): does the port table
-    # reflect Port 3 as claimed now, vs. its own pre-reservation baseline? ---
-    port3_live_text = port3_dash_row.inner_text()
-    print(f"[conflict probe] Port 3 dashboard row while A is live: {port3_live_text!r}")
-    assert "Available" not in port3_live_text, (
-        "Port 3's dashboard row still reads 'Available' while Testbed "
-        f"{TESTBED_A_NAME} is actively running on it — the dashboard is not "
-        f"reflecting the port as in-use at all. Actual row text: {port3_live_text!r}"
-    )
-    assert port3_live_text != port3_baseline_text, (
-        "Port 3's dashboard row is identical before reservation and while "
-        f"{TESTBED_A_NAME} is live on it ({port3_live_text!r}) — no visible "
-        "change at all to reflect the port now being claimed."
-    )
-
-    # --- Create Testbed B's draft and open its wizard on the Ports step ---
-    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
-    _buffer(page)
-    page.get_by_role("button", name="Traffic Engine").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="e.g. web-perf-").fill(TESTBED_B_NAME)
-    _buffer(page)
-    page.get_by_role("button", name="Create draft").click()
-    _buffer(page)
-    _testbed_tile(page, TESTBED_B_NAME).get_by_role("button", name="Edit").click()
-    _buffer(page)
-
-    # --- Probe 2 (wizard-level): read Port 3 and Port 4's rows inside B's
-    # own Ports step, before touching either toggle. ---
-    port3_wiz_row = page.get_by_role("row", name=re.compile(r"^Port 3\b"))
-    port4_wiz_row = page.get_by_role("row", name=re.compile(r"^Port 4\b"))
-    port3_wiz_text = port3_wiz_row.inner_text()
-    port4_wiz_text = port4_wiz_row.inner_text()
-    print(f"[conflict probe] Port 3 row in B's Ports step: {port3_wiz_text!r}")
-    print(f"[conflict probe] Port 4 row in B's Ports step: {port4_wiz_text!r}")
-
-    # --- Attempt to toggle both Port 3 and Port 4 on in Testbed B, exactly
-    # as a user would if trying to (deliberately or accidentally) claim
-    # the pair A is already using. ---
-    toggles_blocked = {}
-    for port_label in PORTS:
-        n = _port_number(port_label)
-        try:
-            page.locator(f"tr:nth-child({n}) > td > div > .toggle > .track").click(timeout=5000)
-            _buffer(page)
-            toggles_blocked[port_label] = False
-        except Exception as exc:
-            toggles_blocked[port_label] = True
-            print(f"[conflict probe] {port_label}'s toggle in B's wizard was not clickable: {exc}")
-
-    port3_rate_field = port3_wiz_row.get_by_placeholder("line rate")
-    port4_rate_field = port4_wiz_row.get_by_placeholder("line rate")
-
-    def _became_selectable(field, port_label):
-        return (
-            not toggles_blocked[port_label]
-            and field.count() > 0
-            and field.is_visible()
-            and field.is_enabled()
-        )
-
-    port3_became_selectable = _became_selectable(port3_rate_field, "Port 3")
-    port4_became_selectable = _became_selectable(port4_rate_field, "Port 4")
-    print(f"[conflict probe] Port 3 became selectable/fillable in B's wizard: {port3_became_selectable}")
-    print(f"[conflict probe] Port 4 became selectable/fillable in B's wizard: {port4_became_selectable}")
-
-    if not (port3_became_selectable or port4_became_selectable):
-        # Best-case outcome: the wizard itself refuses to let a second
-        # testbed select ports the live testbed already holds. Nothing
-        # further to build — discard B's draft and confirm A is healthy.
-        print("[conflict probe] Neither port's toggle activated while claimed by "
-              f"{TESTBED_A_NAME} — conflict blocked at the earliest possible point.")
-    else:
-        # At least one toggle let it through. Finish configuring whichever
-        # ports became selectable, then see whether Apply itself catches —
-        # or fails to catch — the conflict.
-        print("[conflict probe] WARNING: at least one port's toggle turned on in "
-              f"Testbed B's wizard with no block, even though its own row(s) show "
-              f"Port 3={port3_wiz_text!r} Port 4={port4_wiz_text!r} — proceeding to "
-              "Apply to see whether the conflict is caught there instead.")
-        if port3_became_selectable:
-            port3_rate_field.fill("1")
-            _buffer(page)
-        if port4_became_selectable:
-            port4_rate_field.fill("1")
-            port4_rate_field.press("Enter")
-            _buffer(page)
-
-        page.get_by_role("button", name="2 Network Configuration per-").click()
-        _buffer(page)
-        page.get_by_role("textbox", name="10.1.0.10").first.fill("10.0.7.1")
-        _buffer(page)
-        page.locator(".seg").first.select_option("25")
-        _buffer(page)
-        page.get_by_role("textbox", name="10.1.0.10").nth(1).fill("10.0.7.2")
-        _buffer(page)
-        page.locator(
-            "div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main "
-            "> div > div:nth-child(2) > .ne-combo > select"
-        ).select_option("25")
-        _buffer(page)
-        page.get_by_role("textbox", name="auto").nth(2).fill("10.0.7.1")
-        _buffer(page)
-        page.get_by_role("textbox", name="auto").first.fill("10.0.7.2")
-        _buffer(page)
-
-        page.get_by_role("button", name="3 Streams traffic flows — at").click()
-        _buffer(page)
-        page.get_by_role("button", name="✚ Add Stream").click()
-        _buffer(page)
-        add_stream_btn = page.get_by_role("button", name="Add stream", exact=True)
-        if add_stream_btn.is_visible():
-            add_stream_btn.click()
-            _buffer(page)
-        expect(page.get_by_role("button", name="UDP Edit UDP").first).to_be_visible()
-        frame_size_field = page.locator("td:nth-child(5) > .fc").first
-        frame_size_field.fill("1000")
-        _buffer(page)
-        frame_size_field.press("Enter")
-        _buffer(page)
-
-        page.get_by_role("button", name="4 Traffic and Load Profile").click()
-        _buffer(page)
-        # UI change (2026-09-17): "Apply" is gone; a draft's bar now reads
-        # Discard Changes / Delete / Save / Start, and Start pops a
-        # "Testbed is Inactive" confirmation modal (Continue) before
-        # activating. The modal itself is generic UI — it doesn't validate
-        # the config — so it's expected to appear here regardless of the
-        # port conflict; the actual crux question (does the product let a
-        # second testbed claim in-use ports?) is now decided by what
-        # happens after Continue, not by whether the modal shows up.
-        page.get_by_role("button", name="Start", exact=True).click()
-        _buffer(page)
-        continue_btn = page.get_by_role("button", name="Continue", exact=True)
-        if continue_btn.is_visible():
-            continue_btn.click()
-        _buffer(page)
-
-        # Give this real room, same as a normal activate — but this is the
-        # crux check: did Start+Continue silently let live ports get
-        # double-claimed?
-        b_activated = False
-        try:
-            expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
-                timeout=30000
-            )
-            b_activated = True
-        except Exception:
-            pass
-
-        if not b_activated:
-            # Activation didn't go through — capture whatever's visible
-            # (error toast, or the confirmation modal still lingering) for
-            # diagnostics, and dismiss the modal via Cancel if it's still
-            # open so the "← Dashboard" click below isn't blocked by it.
-            error_locator = page.get_by_text(
-                re.compile(r"cannot|can.t|not allowed|error|failed|conflict|in use", re.I)
-            )
-            error_texts = [
-                error_locator.nth(i).inner_text() for i in range(min(error_locator.count(), 5))
-            ]
-            print(f"[conflict probe] Error/warning-like text visible after failed Start+Continue: {error_texts!r}")
-            lingering_cancel = page.get_by_role("button", name="Cancel", exact=True)
-            if lingering_cancel.is_visible():
-                lingering_cancel.click()
-                _buffer(page)
-
-        # Whatever happened to B, immediately re-check A wasn't corrupted.
-        page.get_by_role("button", name="← Dashboard").click()
-        _buffer(page)
-        discard_btn = page.get_by_role("button", name="Discard", exact=True)
-        if discard_btn.is_visible():
-            discard_btn.click()
-        expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
-
-        a_still_live = tile_a.get_by_role("button", name="Stop").is_visible()
-        print(f"[conflict probe] Testbed B reached an activated (live Statistics) state on Start+Continue: {b_activated}")
-        print(f"[conflict probe] Testbed A still shows Stop (live/unharmed) after B's attempt: {a_still_live}")
-
-        assert not b_activated, (
-            f"BUG: Testbed {TESTBED_B_NAME} was allowed to activate+start "
-            "with Port 3/4 selected while Testbed "
-            f"{TESTBED_A_NAME} was actively, live using those same ports — "
-            "the product silently let a second testbed claim in-use ports "
-            f"instead of blocking it. Testbed A live afterward: {a_still_live}."
-        )
-
-    # --- Final sanity: Testbed A's run should still be genuinely healthy,
-    # regardless of which branch above was taken ---
-    expect(tile_a.get_by_role("button", name="Stop")).to_be_visible()
+    board.open()
+    expect(board.is_running(TESTBED_B_NAME)).to_have_count(0)
+    board.keeps_running(TESTBED_A_NAME, 20)

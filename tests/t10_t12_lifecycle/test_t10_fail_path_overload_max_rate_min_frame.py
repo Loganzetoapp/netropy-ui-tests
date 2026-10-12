@@ -51,35 +51,15 @@ no longer mean "max". UDP only: a 2026-09-30 email reports TCP/HTTP
 64-byte streams put 5.0 in a bad state, while UDP at 64 bytes is fine.
 """
 import pytest
-from playwright.sync_api import Page
 
-from conftest import (
-    add_stream,
-    assert_activatable_name,
-    create_testbed,
-    enable_ports,
-    open_editor,
-    remove_testbed,
-    run_verdict,
-    set_addressing,
-    set_all_frame_sizes,
-    set_ramp,
-    start_testbed,
-    wait_for_run_to_finish,
-)
+from pages import PortSpec, StreamSpec, TestbedSpec
 
-# Testbed name must stay <= 15 chars: the backend can create and save a
-# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 TESTBED_NAME = "T10-FailPath"
-assert_activatable_name(TESTBED_NAME)
-PORTS = ["Port 3", "Port 4"]
-
-
-@pytest.fixture
-def clean_testbed(dashboard: Page):
-    remove_testbed(dashboard, TESTBED_NAME)
-    yield
-    remove_testbed(dashboard, TESTBED_NAME)
+# Default line rate = each port's max; 64 B frames: as hard as the box can be pushed.
+SPEC = TestbedSpec(
+    ports={3: PortSpec(ip="10.0.8.1", cidr=25), 4: PortSpec(ip="10.0.8.2", cidr=25)},
+    streams=[StreamSpec("UDP")], frame_size=64, ramp=(2, 20, 2),
+)
 
 
 @pytest.mark.stateful
@@ -96,19 +76,9 @@ def clean_testbed(dashboard: Page):
     ),
     strict=False,
 )
-def test_t10_fail_path_overload_max_rate_min_frame_reports_fail(dashboard: Page, clean_testbed):
-    page = dashboard
-    create_testbed(page, TESTBED_NAME)
-    open_editor(page, TESTBED_NAME)
-    enable_ports(page, PORTS)  # default Line Rate = each port's max
-    set_addressing(page, (3, 4), ("10.0.8.1", "10.0.8.2"), cidr=25)
-    add_stream(page, "UDP")
-    set_all_frame_sizes(page, 64)
-    set_ramp(page, up=2, hold=20, down=2)
-
-    start_testbed(page)
-    run = wait_for_run_to_finish(page, timeout=24_000 + 3 * 60_000)
-
-    # If this reads "pass", the box sustains max rate at 64B without loss —
-    # a real finding to report, not something to force.
-    assert run_verdict(run) == "fail"
+def test_t10_fail_path_overload_max_rate_min_frame_reports_fail(traffic_engine):
+    result = traffic_engine.run(TESTBED_NAME, SPEC)
+    # If this reads "pass", the box sustains max rate at 64B without loss:
+    # a real finding to report, not something to force. The summary sheet
+    # records the measured loss either way.
+    assert result.verdict == "fail", result.row_text

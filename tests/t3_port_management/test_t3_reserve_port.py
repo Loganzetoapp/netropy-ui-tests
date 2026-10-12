@@ -1,38 +1,32 @@
 """T3 port management — reserve a port updates status and Reserved By.
 
-Standalone split of one test from test_t3_port_management_all.py so it
-can run in isolation; see that file for the full combined T3 suite.
-
 Port state is global on shared hardware: this test must release what it
 reserves, even on failure, so the fixture teardown always attempts a
 release.
+
+On pages/ (2026-10-11).
 """
 import pytest
 from playwright.sync_api import Page, expect
 
-
-def _first_available_row(page: Page):
-    for n in range(1, 9):
-        row = page.get_by_role("row", name=f"Port {n}")
-        if row.get_by_text("Unreserved", exact=True).is_visible():
-            return row
-    pytest.skip("No available port found — all 8 may be reserved by other users")
+from pages import DashboardPage, settings
 
 
 @pytest.fixture
-def available_port_row(dashboard: Page):
-    row = _first_available_row(dashboard)
-    yield row
-    release_button = row.get_by_role("button", name="Release")
-    if release_button.is_visible():
-        release_button.click()
-        expect(row.get_by_text("Unreserved", exact=True)).to_be_visible()
+def free_port(dashboard: Page):
+    """A port nobody holds; released again afterwards if this test left it
+    reserved (it only ever releases the port it picked)."""
+    board = DashboardPage(dashboard)
+    port = board.first_unreserved_port()
+    if port is None:
+        pytest.skip("No unreserved port: all 8 may be held by other users")
+    yield port
+    if board.port_row(port).get_by_role("button", name="Release", exact=True).is_visible():
+        board.release_port(port)
 
 
 @pytest.mark.stateful
-def test_t3_reserve_port_updates_status_and_reserved_by(available_port_row):
-    row = available_port_row
-    row.get_by_role("button", name="Reserve").click()
-    expect(row.get_by_text("Reserved", exact=True)).to_be_visible()
-    expect(row).to_contain_text("test")
-    expect(row.get_by_role("button", name="Release")).to_be_visible()
+def test_t3_reserve_port_updates_status_and_reserved_by(dashboard: Page, free_port):
+    board = DashboardPage(dashboard)
+    board.reserve_port(free_port)
+    expect(board.port_row(free_port)).to_contain_text(settings.NTG_USER)

@@ -119,51 +119,27 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import (
-    add_stream,
-    assert_activatable_name,
-    create_testbed,
-    enable_ports,
-    go_to_dashboard,
-    open_editor,
-    remove_testbed,
-    set_all_frame_sizes,
-    set_ramp,
-    start_testbed,
-    testbed_tile,
-    wait_for_run_to_finish,
-)
+from pages import PortSpec, StreamSpec, TestbedSpec
 
-# Testbed name must stay <= 15 chars: the backend can create and save a
-# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 TESTBED_NAME = "T10-DeactLive"
-assert_activatable_name(TESTBED_NAME)
 PORTS = ["Port 3", "Port 4"]
-
-
-@pytest.fixture
-def clean_testbed(dashboard: Page):
-    remove_testbed(dashboard, TESTBED_NAME)
-    yield
-    remove_testbed(dashboard, TESTBED_NAME)
+# 5/90/5 = 100s: Deactivate lands ~15s into a ~90s hold.
+SPEC = TestbedSpec(
+    ports={3: PortSpec(rate=1), 4: PortSpec(rate=1)},
+    streams=[StreamSpec("UDP")], frame_size=1500, ramp=(5, 90, 5),
+)
 
 
 @pytest.mark.stateful
-def test_t10_deactivate_mid_run_skips_stop_cleanly(dashboard: Page, clean_testbed):
-    page = dashboard
-    create_testbed(page, TESTBED_NAME)
-    open_editor(page, TESTBED_NAME)
-    enable_ports(page, PORTS, rate="1", unit="Gbps")
-    add_stream(page, "UDP")
-    set_all_frame_sizes(page, 1500)
-    # 5/90/5 = 100s — Deactivate lands ~15s into an ~90s hold.
-    set_ramp(page, up=5, hold=90, down=5)
-    start_testbed(page)
+def test_t10_deactivate_mid_run_skips_stop_cleanly(dashboard: Page, traffic_engine):
+    page, board = dashboard, traffic_engine.dashboard
+    traffic_engine.create(TESTBED_NAME, SPEC)
+    traffic_engine.start(TESTBED_NAME)
 
-    go_to_dashboard(page)
-    tile = testbed_tile(page, TESTBED_NAME)
-    expect(tile.get_by_role("button", name="Stop", exact=True)).to_be_visible(timeout=15_000)
-    port3_live = page.get_by_role("row", name=re.compile(r"^Port 3\b")).inner_text()
+    board.open()
+    tile = board.testbed_entry(TESTBED_NAME)
+    expect(board.is_running(TESTBED_NAME)).to_be_visible(timeout=15_000)
+    port3_live = board.port_row(3).inner_text()
     print(f"[deactivate-mid-run] Port 3 dashboard row while live: {port3_live!r}")
     page.wait_for_timeout(15_000)
 
@@ -178,14 +154,15 @@ def test_t10_deactivate_mid_run_skips_stop_cleanly(dashboard: Page, clean_testbe
     expect(deactivate).to_have_count(0, timeout=30_000)
     expect(page.get_by_role("button", name="Start", exact=True)).to_be_visible(timeout=15_000)
 
-    go_to_dashboard(page)
-    expect(tile.get_by_role("button", name="Stop", exact=True)).to_have_count(0)
+    board.open()
+    expect(board.is_running(TESTBED_NAME)).to_have_count(0)
     # Deactivate also releases the ports (no separate Release needed).
     for port in PORTS:
-        row = page.get_by_role("row", name=re.compile(rf"^{port}\b"))
-        expect(row.get_by_text("Unreserved", exact=True)).to_be_visible(timeout=10_000)
+        expect(board.port_row(port).get_by_text("Unreserved", exact=True)).to_be_visible(timeout=10_000)
 
-    # The run skipped Stop entirely — is it still recorded?
-    tile.get_by_role("button", name="Stats").click()
-    run = wait_for_run_to_finish(page, run_number=1, timeout=30_000)
-    expect(run.get_by_text(re.compile(r"^(pass|fail)$", re.I))).to_be_visible(timeout=15_000)
+    # The run skipped Stop entirely: is it still recorded?
+    board.tile_button(TESTBED_NAME, "Stats").click()
+    row = traffic_engine.runs.wait_for_run_to_finish(run_number=1, timeout=30_000)
+    expect(row.get_by_text(re.compile(r"^(pass|fail)$", re.I))).to_be_visible(timeout=15_000)
+    result = traffic_engine.result(TESTBED_NAME, row, label="deactivated")
+    assert not result.metrics.failed_checks(), result.metrics.failed_checks()

@@ -1,8 +1,5 @@
 """T1 authentication — logout returns to login and kills the session.
 
-Standalone split of one test from test_t1_auth_all.py so it can run in
-isolation; see that file for the full combined T1 suite.
-
 This test exercises login/logout directly, so it uses a fresh browser
 context instead of the session-authenticated `page`/`dashboard` fixtures —
 the whole point here is testing the login flow itself.

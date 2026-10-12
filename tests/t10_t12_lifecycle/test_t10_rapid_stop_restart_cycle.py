@@ -68,47 +68,27 @@ import re
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import (
-    add_stream,
-    assert_activatable_name,
-    create_testbed,
-    enable_ports,
-    go_to_dashboard,
-    open_editor,
-    remove_testbed,
-    set_all_frame_sizes,
-    set_ramp,
-    start_testbed,
-    testbed_tile,
-    wait_for_run_to_finish,
+from pages import DashboardPage, PortSpec, StreamSpec, TestbedSpec
+
+TESTBED_NAME = "T10-RapidCycle"
+# 5/120/5 = 130s: room to interrupt twice well clear of the natural end.
+SPEC = TestbedSpec(
+    ports={3: PortSpec(rate=1), 4: PortSpec(rate=1)},
+    streams=[StreamSpec("UDP")], frame_size=1500, ramp=(5, 120, 5),
 )
 
-# Testbed name must stay <= 15 chars: the backend can create and save a
-# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
-TESTBED_NAME = "T10-RapidCycle"
-assert_activatable_name(TESTBED_NAME)
-PORTS = ["Port 3", "Port 4"]
 
-
-@pytest.fixture
-def clean_testbed(dashboard: Page):
-    remove_testbed(dashboard, TESTBED_NAME)
-    yield
-    remove_testbed(dashboard, TESTBED_NAME)
-
-
-def _start_and_confirm_live(page: Page, tile):
+def _start_and_confirm_live(board: DashboardPage):
     """Start from the tile and confirm it really goes live (Stop appears)."""
-    start = tile.get_by_role("button", name="Start", exact=True)
-    expect(start).to_be_visible(timeout=10_000)
-    start_testbed(page, start_button=start)
-    expect(tile.get_by_role("button", name="Stop", exact=True)).to_be_visible(timeout=15_000)
+    expect(board.tile_button(TESTBED_NAME, "Start")).to_be_visible(timeout=10_000)
+    board.start_from_tile(TESTBED_NAME)
+    expect(board.is_running(TESTBED_NAME)).to_be_visible(timeout=15_000)
 
 
-def _confirm_traffic_flowing(page: Page, tile, port_label: str):
+def _confirm_traffic_flowing(page: Page, board: DashboardPage, port_label: str):
     """Open live Stats and confirm `port_label`'s Per-Port Aggregate row
     goes nonzero (not frozen at 0 after a restart), then come back."""
-    tile.get_by_role("button", name="Stats").click()
+    board.tile_button(TESTBED_NAME, "Stats").click()
     heading = page.get_by_text("Per-Port Aggregate Statistics", exact=False)
     expect(heading).to_be_visible(timeout=15_000)
     row = heading.locator("xpath=following::table[1]").get_by_role(
@@ -119,58 +99,50 @@ def _confirm_traffic_flowing(page: Page, tile, port_label: str):
         text = row.inner_text()
         if re.search(r"[1-9]", text.replace(port_label, "")):
             break
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(500)  # poll interval
     else:
         raise AssertionError(f"{port_label} row never showed nonzero traffic after restart: {text!r}")
-    go_to_dashboard(page)
-
-
-def _stop_and_confirm_ended(tile):
-    stop = tile.get_by_role("button", name="Stop", exact=True)
-    stop.click()
-    expect(stop).to_have_count(0, timeout=20_000)
+    board.open()
 
 
 @pytest.mark.stateful
-def test_t10_rapid_stop_restart_cycle(dashboard: Page, clean_testbed):
-    page = dashboard
-    create_testbed(page, TESTBED_NAME)
-    open_editor(page, TESTBED_NAME)
-    enable_ports(page, PORTS, rate="1", unit="Gbps")
-    add_stream(page, "UDP")
-    set_all_frame_sizes(page, 1500)
-    # 5/120/5 = 130s — room to interrupt twice well clear of natural end.
-    set_ramp(page, up=5, hold=120, down=5)
-    page.get_by_role("button", name="Save", exact=True).click()
-    expect(page.get_by_role("button", name="Save", exact=True)).to_be_disabled(timeout=15_000)
-    go_to_dashboard(page)
-    tile = testbed_tile(page, TESTBED_NAME)
+def test_t10_rapid_stop_restart_cycle(dashboard: Page, traffic_engine):
+    page, board = dashboard, traffic_engine.dashboard
+    traffic_engine.create(TESTBED_NAME, SPEC)
+    traffic_engine.editor.save()
+    board.open()
 
     # Cycle 1: Start (popup -> activate), confirm live, Stop mid-hold.
-    _start_and_confirm_live(page, tile)
-    _confirm_traffic_flowing(page, tile, "Port 3")
+    _start_and_confirm_live(board)
+    _confirm_traffic_flowing(page, board, "Port 3")
     page.wait_for_timeout(15_000)
-    _stop_and_confirm_ended(tile)
+    board.stop_from_tile(TESTBED_NAME, timeout=20_000)
 
-    # Cycle 2: restart the SAME still-active tile — no deactivate, no edit.
-    _start_and_confirm_live(page, tile)
-    _confirm_traffic_flowing(page, tile, "Port 3")
+    # Cycle 2: restart the SAME still-active tile: no deactivate, no edit.
+    _start_and_confirm_live(board)
+    _confirm_traffic_flowing(page, board, "Port 3")
     page.wait_for_timeout(15_000)
-    _stop_and_confirm_ended(tile)
+    board.stop_from_tile(TESTBED_NAME, timeout=20_000)
 
     # Cycle 3: restart once more and let it finish naturally.
-    _start_and_confirm_live(page, tile)
-    _confirm_traffic_flowing(page, tile, "Port 3")
-    expect(tile.get_by_role("button", name="Stop", exact=True)).to_have_count(0, timeout=200_000)
+    _start_and_confirm_live(board)
+    _confirm_traffic_flowing(page, board, "Port 3")
+    expect(board.is_running(TESTBED_NAME)).to_have_count(0, timeout=200_000)
 
     # Run history: exactly one clean row per cycle, three distinct starts.
-    tile.get_by_role("button", name="Stats").click()
-    wait_for_run_to_finish(page, run_number=3, timeout=30_000)
+    board.tile_button(TESTBED_NAME, "Stats").click()
+    runs = traffic_engine.runs
+    runs.wait_for_run_to_finish(run_number=3, timeout=30_000)
     started = set()
     for n in (1, 2, 3):
-        row = page.get_by_role("row").filter(has_text=re.compile(rf"^\s*#{n}(?!\d)"))
+        row = runs.run_row(n)
         expect(row).to_have_count(1)
         expect(row.get_by_text(re.compile(r"^(pass|fail)$", re.I))).to_be_visible()
         started.add(row.locator("td").nth(1).inner_text().strip())
     assert len(started) == 3, f"expected 3 distinct Started At values, got {started}"
-    expect(page.get_by_role("row").filter(has_text=re.compile(r"^\s*#4(?!\d)"))).to_have_count(0)
+    expect(runs.run_row(4)).to_have_count(0)
+
+    # Summary sheet: the natural-length third run.
+    result = traffic_engine.result(TESTBED_NAME, runs.run_row(3), label="cycle 3",
+                                   expected_seconds=SPEC.run_seconds)
+    assert not result.metrics.failed_checks(), result.metrics.failed_checks()

@@ -34,22 +34,7 @@ Stateful: generates real traffic.
 import pytest
 from playwright.sync_api import Page
 
-from conftest import (
-    add_stream,
-    assert_activatable_name,
-    assert_unit_healthy,
-    create_testbed,
-    enable_ports,
-    open_editor,
-    remove_testbed,
-    run_verdict,
-    set_all_frame_sizes,
-    set_ramp,
-    start_testbed,
-    wait_for_run_to_finish,
-)
-
-PORTS = ["Port 3", "Port 4"]
+from pages import PortSpec, StreamSpec, TestbedSpec, UnitHealth
 
 # (picker label, testbed name, frame bytes, header minimum incl. FCS)
 CASES = [
@@ -74,16 +59,6 @@ CASES = [
     ("HTTP", "T14-Sz-HTTP-256", 256, 70),
     ("HTTP", "T14-Sz-HTTP1500", 1500, 70),
 ]
-for _, _name, _, _ in CASES:
-    assert_activatable_name(_name)
-
-
-@pytest.fixture
-def size_testbed(dashboard: Page, request):
-    name = request.node.callspec.params["case"][1]
-    remove_testbed(dashboard, name)
-    yield name
-    remove_testbed(dashboard, name)
 
 
 @pytest.mark.stateful
@@ -92,22 +67,15 @@ def size_testbed(dashboard: Page, request):
     CASES,
     ids=[f"{p.replace(' (', '-').rstrip(')')}-{size}B" for p, _, size, _ in CASES],
 )
-def test_t14_frame_size_vs_protocol_headers(dashboard: Page, size_testbed, case):
+def test_t14_frame_size_vs_protocol_headers(dashboard: Page, traffic_engine, case):
     protocol, name, size, header_min = case
-    page = dashboard
-    fits = size >= header_min
-    print(f"[T14 size] {protocol} @ {size} B — header minimum ~{header_min} B — fits: {fits}")
+    health = UnitHealth(dashboard)
+    print(f"[T14 size] {protocol} @ {size} B: header minimum ~{header_min} B, fits: {size >= header_min}")
+    spec = TestbedSpec(ports={3: PortSpec(rate=500, unit="Mbps"), 4: PortSpec(rate=500, unit="Mbps")},
+                       streams=[StreamSpec(protocol)], frame_size=size, ramp=(2, 15, 2))
 
-    assert_unit_healthy(page, context=f"before {protocol} @ {size} B")
-    create_testbed(page, name)
-    open_editor(page, name)
-    enable_ports(page, PORTS, rate="500", unit="Mbps")
-    add_stream(page, protocol)
-    set_all_frame_sizes(page, size)
-    set_ramp(page, up=2, hold=15, down=2)
-    start_testbed(page)
-    run = wait_for_run_to_finish(page, timeout=19_000 + 3 * 60_000)
-    verdict, row_text = run_verdict(run), run.inner_text()
-    print(f"[T14 size] {protocol} @ {size} B saved run: {row_text!r}")
-    assert_unit_healthy(page, context=f"after {protocol} @ {size} B")
-    assert verdict == "pass", f"run verdict {verdict!r}; saved run row: {row_text!r}"
+    health.assert_healthy(context=f"before {protocol} @ {size} B")
+    result = traffic_engine.run(name, spec)
+    print(f"[T14 size] {protocol} @ {size} B saved run: {result.row_text!r}")
+    health.assert_healthy(context=f"after {protocol} @ {size} B", testbed=name)
+    result.assert_passed()

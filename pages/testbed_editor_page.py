@@ -92,6 +92,20 @@ class TestbedEditorPage(BasePage):
                 self.set_line_rate(port, rate, unit)
 
     # --- 2 Network Configuration (5.0's default Table view) ------------
+    def set_network_view(self, view: str) -> None:
+        """Step 2's Table / Cards view toggle (5.0 opens in Table)."""
+        self.open_step(2)
+        tab = self.page.get_by_role("tab", name=re.compile(rf"{view}$"))
+        if tab.get_attribute("aria-selected") != "true":
+            tab.click()
+        expect(tab).to_have_attribute("aria-selected", "true")
+        if view == "Cards":
+            expect(self.network_cards().first).to_be_visible(timeout=10_000)
+
+    def network_cards(self):
+        """Per-port cards in step 2's Cards view."""
+        return self.page.locator(".ne-pcard")
+
     def network_row(self, port):
         return self.page.get_by_role("row", name=re.compile(rf"^{port_number(port)}\s"))
 
@@ -178,6 +192,11 @@ class TestbedEditorPage(BasePage):
         expect(field).to_have_value(str(size))
 
     # --- 4 Traffic and Load Profile -------------------------------------
+    def open_load_profile(self) -> None:
+        """Step 4, with its traffic profile rendered (the USED pill)."""
+        self.open_step(4)
+        expect(self.page.locator(".pill", has_text="used")).to_be_visible(timeout=10_000)
+
     def load_profile_checkbox(self):
         """The Load profile toggle: an unlabelled checkbox beside the
         "Load profile" title (5.0.9: "Disabled | Runs until Manual Stop" /

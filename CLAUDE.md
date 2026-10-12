@@ -22,6 +22,19 @@ their plan area, e.g. `test_t6_subnet_25_computes_126_clients`.
 - Never mark a test both stateful and hardware_free.
 - Never automate "Reset All" on the dashboard.
 
+## Shared library (`pages/`), decided 2026-10-11
+- New and changed tests are built from `pages/` (see `pages/README.md`). Traffic tests
+  use the `traffic_engine` fixture and a `TestbedSpec`. Tests don't contain selectors,
+  except for a one-off assertion specific to that test.
+- A UI change is fixed in `pages/`, then verified with `pytest tests/t0_library`
+  (hardware-free self-tests of every library method), then the suite.
+- Don't add a parallel helper: if `pages/` lacks an action, add it there.
+- Known product bugs are marked with the shared markers in
+  `tests/t10_t12_lifecycle/known_issues.py` (xfail, non-strict).
+- Every traffic run gets a summary sheet: NTG measurements read from the saved
+  run via the Controller API, read-only (`/runs`, `/tests`, never live `/stats`
+  on a stopped test). Tests without the WAN emulator don't record emulator data.
+
 ## Conventions
 - Selectors: role-based, scoped to a row or card first, e.g.
   `page.get_by_role("row", name="Port 4").get_by_role("switch")`.

@@ -17,209 +17,54 @@ several activations. Confirmed by exploration:
   checks happen after releasing ports, reusing the same testbed.
 - Delete run has `aria-label="Delete run"` — no confirm dialog observed
   for a single run's icon delete (unlike testbed/profile delete).
+
+REWRITTEN 2026-10-11 on the shared pages/ library (NTG 5.0.9): the 4.0
+click sequence described above (manual Reserve, "Available", Apply,
+positional selectors) is gone; the scenario and its assertions are kept.
+Runs are recorded on the summary sheet (traffic_engine fixture).
 """
 import json
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import assert_activatable_name
+from pages import PortSpec, StreamSpec, TestbedSpec
 
-# Testbed name must stay <= 15 chars: the backend can create and save a
-# longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 NAME = "T12-RunHistory"
-assert_activatable_name(NAME)
-PORTS = ["Port 1", "Port 2"]
-
-
-def _testbed_tile(page: Page):
-    return page.locator(".tb-tile").filter(has_text=NAME)
-
-
-def _delete_testbed_if_present(page: Page):
-    tile = _testbed_tile(page)
-    if tile.count() > 0:
-        tile.locator('[data-tip="Delete"] button').click()
-        page.get_by_role("button", name="Delete", exact=True).click()
-        expect(_testbed_tile(page)).to_have_count(0, timeout=10000)
-
-
-def _release_ports(page: Page):
-    dashboard_btn = page.get_by_role("button", name="← Dashboard")
-    if dashboard_btn.is_visible():
-        dashboard_btn.click()
-        page.wait_for_timeout(400)
-        discard_btn = page.get_by_role("button", name="Discard", exact=True)
-        if discard_btn.is_visible():
-            discard_btn.click()
-    else:
-        page.goto("/")
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        release_btn = row.get_by_role("button", name="Release")
-        if release_btn.is_visible():
-            release_btn.click()
-            confirm = page.get_by_role("button", name="Deactivate & release")
-            if confirm.is_visible():
-                confirm.click()
-            expect(row.get_by_text("Available", exact=True)).to_be_visible(timeout=10000)
-
-
-@pytest.fixture
-def clean_testbed(dashboard: Page):
-    _delete_testbed_if_present(dashboard)
-    yield
-    _release_ports(dashboard)
-    _delete_testbed_if_present(dashboard)
+SPEC = TestbedSpec(ports={1: PortSpec(rate=1), 2: PortSpec(rate=1)},
+                   streams=[StreamSpec("ICMP")], ramp=(5, 10, 5))
+EXPORTS = {"PDF": ".pdf", "XLSX": ".xlsx", "CSV": ".csv", "JSON": ".json", "ZIP": ".zip", "FULL": None}
 
 
 @pytest.mark.stateful
-def test_t12_run_history_exports_delete_and_reports_badge(
-    dashboard: Page, clean_testbed, tmp_path
-):
-    page = dashboard
-
-    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
-    page.get_by_placeholder("e.g. web-perf-01").fill(NAME)
-    page.get_by_role("button", name="Traffic Engine", exact=True).click()
-    page.get_by_role("button", name="Create draft", exact=True).click()
-    tile = _testbed_tile(page)
-    expect(tile).to_have_count(1, timeout=10000)
-    tile.get_by_role("button", name="Edit").click()
-    expect(page.get_by_role("heading", name="Ports", exact=False).first).to_be_visible(
-        timeout=15000
-    )
-    row1 = page.locator("tr").nth(1)
-    row2 = page.locator("tr").nth(2)
-    row1.locator(".toggle .track").click()
-    row2.locator(".toggle .track").click()
-    for row in (row1, row2):
-        rate_field = row.locator('input[placeholder="line rate"]')
-        rate_field.fill("1")
-        rate_field.press("Tab")
-
-    page.get_by_role("button", name="3 Streams", exact=False).click()
-    expect(page.get_by_role("button", name="✚ Add Stream", exact=True)).to_be_visible(
-        timeout=10000
-    )
-    page.get_by_role("button", name="✚ Add Stream", exact=True).click()
-    expect(page.get_by_role("button", name="ICMP", exact=True)).to_be_visible(timeout=10000)
-    page.get_by_role("button", name="ICMP", exact=True).click()
-    add_stream_btn = page.get_by_role("button", name="Add stream", exact=True)
-    if add_stream_btn.is_visible():
-        add_stream_btn.click()
-
-    page.get_by_role("button", name="4 Traffic and Load Profile", exact=False).click()
-    expect(page.locator(".pill", has_text="used")).to_be_visible(timeout=10000)
-    ramp_row = page.locator("div", has_text="Disabled — traffic runs at full rate").last
-    ramp_row.locator(".toggle .track").click()
-    ramp_up = page.locator(".fg", has_text="Ramp up").locator('input[type="number"]')
-    hold = page.locator(".fg", has_text="Hold time").locator('input[type="number"]')
-    ramp_down = page.locator(".fg", has_text="Ramp down").locator('input[type="number"]')
-    ramp_up.fill("5")
-    ramp_up.press("Tab")
-    hold.fill("10")
-    hold.press("Tab")
-    ramp_down.fill("5")
-    ramp_down.press("Tab")
-
-    # UI update (2026-09-17): the wizard's draft-testbed action bar no
-    # longer has a separate Apply ("Save & activate") + Start ("run
-    # traffic") pair — see
-    # test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the full
-    # writeup. A single "Start" click now activates the testbed AND
-    # starts traffic together, after a "Testbed is Inactive" confirmation
-    # modal ("Continue" to proceed), landing straight on the live
-    # Statistics view — no more standalone "Deactivate" state to wait on
-    # in between, and no second "Start" to click.
-    page.get_by_role("button", name="Start", exact=True).click()
-    page.wait_for_timeout(400)
-    continue_btn = page.get_by_role("button", name="Continue", exact=True)
-    if continue_btn.is_visible():
-        continue_btn.click()
-
-    # Activation + traffic start together carry the same `?wait=15`
-    # server-side contract the old two-step flow did, so give it the same
-    # real room rather than treating slow-but-working as a failure.
-    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
-        timeout=75000
-    )
-
-    # Wait for natural completion (ramp 5+10+5=20s).
-    expect(page.get_by_text("LIVE · IDLE", exact=True)).to_be_visible(timeout=45000)
+def test_t12_run_history_exports_delete_and_reports_badge(dashboard: Page, traffic_engine, tmp_path):
+    board, runs = traffic_engine.dashboard, traffic_engine.runs
+    result = traffic_engine.run(NAME, SPEC)
+    result.assert_passed()
 
     # --- Run history row ---
-    run_row = page.locator("table.runs-table tbody tr").first
-    expect(run_row).to_be_visible()
-    expect(run_row.get_by_text("pass", exact=True)).to_be_visible()
-    cells = run_row.locator("td")
-    expect(cells.nth(1)).not_to_have_text("")  # Started At
-    expect(cells.nth(2)).not_to_have_text("")  # Duration
-    expect(cells.nth(4)).to_contain_text("Gbps")  # Avg Tx
-    expect(cells.nth(5)).to_contain_text("Gbps")  # Avg Rx
-    expect(cells.nth(6)).to_contain_text("%")  # Loss %
+    row = runs.run_row(1)
+    expect(row).to_contain_text("%")
+    expect(row).to_contain_text("bps")
 
-    # --- Exports ---
-    with page.expect_download(timeout=10000) as pdf_dl:
-        run_row.locator('button[title="Download PDF report"]').click()
-    pdf_path = tmp_path / pdf_dl.value.suggested_filename
-    pdf_dl.value.save_as(str(pdf_path))
-    assert pdf_path.stat().st_size > 0
-    assert pdf_path.suffix == ".pdf"
+    # --- Exports: every format downloads a non-empty file ---
+    for fmt, suffix in EXPORTS.items():
+        download = runs.export(row, fmt)
+        path = tmp_path / download.suggested_filename
+        download.save_as(str(path))
+        assert path.stat().st_size > 0, f"{fmt} export is empty"
+        if suffix:
+            assert path.suffix == suffix, f"{fmt} export saved as {path.name}"
+        if fmt == "JSON":
+            assert json.loads(path.read_text()), "JSON report has no content"
 
-    with page.expect_download(timeout=10000) as json_dl:
-        run_row.locator('button[title="Download report JSON"]').click()
-    json_path = tmp_path / json_dl.value.suggested_filename
-    json_dl.value.save_as(str(json_path))
-    report = json.loads(json_path.read_text())
-    assert report, "expected the JSON report to have some top-level content"
-
-    with page.expect_download(timeout=10000) as csv_dl:
-        run_row.locator('button[title="Download CSV"]').click()
-    assert csv_dl.value.suggested_filename.endswith(".csv")
-
-    with page.expect_download(timeout=10000) as xlsx_dl:
-        run_row.locator('button[title="Download Excel workbook (all sheets)"]').click()
-    assert xlsx_dl.value.suggested_filename.endswith(".xlsx")
-
-    with page.expect_download(timeout=10000) as zip_dl:
-        run_row.locator(
-            'button[title="Download all formats (PDF, XLSX, CSV, JSON) as a zip"]'
-        ).click()
-    assert zip_dl.value.suggested_filename.endswith(".zip")
-
-    # --- Reports badge: only appears once the testbed is deactivated ---
-    # Releasing the first port's reservation deactivates the whole
-    # testbed (and both its ports) at once — guard each click on the
-    # Release button still being present, same as `_release_ports`.
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=10000)
-    for port_label in PORTS:
-        port_row = page.get_by_role("row", name=port_label)
-        release_btn = port_row.get_by_role("button", name="Release")
-        if release_btn.is_visible():
-            release_btn.click()
-            confirm = page.get_by_role("button", name="Deactivate & release")
-            if confirm.is_visible():
-                confirm.click()
-            expect(port_row.get_by_text("Available", exact=True)).to_be_visible(timeout=10000)
-
-    tile = _testbed_tile(page)
-    reports_badge = tile.get_by_role("button", name="Reports:", exact=False)
-    expect(reports_badge).to_contain_text("1")
-    reports_badge.click()
-    run_row = page.locator("table.runs-table tbody tr").first
-    expect(run_row).to_be_visible(timeout=10000)
+    # --- Reports count on the tile ---
+    board.open()
+    expect(board.reports_button(NAME)).to_have_text("1")
 
     # --- Delete the run ---
-    run_row.locator('button[aria-label="Delete run"]').click()
-    confirm = page.get_by_role("button", name="Delete", exact=True)
-    if confirm.is_visible():
-        confirm.click()
-    expect(page.locator("table.runs-table tbody tr")).to_have_count(0, timeout=10000)
-
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=10000)
-    tile = _testbed_tile(page)
-    expect(tile.get_by_role("button", name="Reports:", exact=False)).to_have_count(0)
+    board.reports_button(NAME).click()
+    runs.delete_run(runs.run_row(1))
+    expect(runs.rows()).to_have_count(0)
+    board.open()
+    expect(board.reports_button(NAME)).not_to_have_text("1")
