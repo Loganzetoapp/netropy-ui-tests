@@ -10,42 +10,17 @@ a testbed is activated (not relevant here, this testbed never activates).
 import pytest
 from playwright.sync_api import Page, expect
 
+from pages import DashboardPage
+
 NAME = "T4-Delete-DeleteMe"
-
-
-def _tile(page: Page, name: str = NAME):
-    return page.locator(".tb-tile").filter(has_text=name)
-
-
-def _delete_if_present(page: Page, name: str = NAME):
-    tile = _tile(page, name)
-    if tile.count() > 0:
-        tile.locator('[data-tip="Delete"] button').click()
-        page.get_by_role("button", name="Delete", exact=True).click()
-        expect(_tile(page, name)).to_have_count(0, timeout=10000)
-
-
-def _create(page: Page, name: str = NAME):
-    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
-    page.get_by_placeholder("e.g. web-perf-01").fill(name)
-    page.get_by_role("button", name="Traffic Engine", exact=True).click()
-    page.get_by_role("button", name="Create draft", exact=True).click()
-    expect(_tile(page, name)).to_have_count(1, timeout=10000)
-
-
-@pytest.fixture
-def clean_up(dashboard: Page):
-    _delete_if_present(dashboard)
-    yield
-    _delete_if_present(dashboard)
 
 
 @pytest.mark.hardware_free
 def test_t4_delete_from_card_removes_tile(dashboard: Page, clean_up):
     page = dashboard
-    _create(page)
+    DashboardPage(page).create_testbed(NAME, activatable=False)
 
-    tile = _tile(page)
+    tile = DashboardPage(page).testbed_entry(NAME)
     tile.locator('[data-tip="Delete"] button').click()
     page.get_by_role("button", name="Delete", exact=True).click()
     expect(tile).to_have_count(0, timeout=10000)
@@ -54,9 +29,9 @@ def test_t4_delete_from_card_removes_tile(dashboard: Page, clean_up):
 @pytest.mark.hardware_free
 def test_t4_delete_from_inside_edit_removes_tile(dashboard: Page, clean_up):
     page = dashboard
-    _create(page)
+    DashboardPage(page).create_testbed(NAME, activatable=False)
 
-    _tile(page).get_by_role("button", name="Edit").click()
+    DashboardPage(page).testbed_entry(NAME).get_by_role("button", name="Edit").click()
     expect(page.get_by_role("button", name="Delete", exact=True)).to_be_visible(timeout=10000)
     # Edit view's own Delete button opens a confirm dialog ("Delete testbed
     # — Remove <name> from the unit?") with its own Delete button — same
@@ -69,4 +44,4 @@ def test_t4_delete_from_inside_edit_removes_tile(dashboard: Page, clean_up):
 
     # Deleting from inside Edit navigates back to the dashboard.
     expect(page.get_by_text("Port Status")).to_be_visible(timeout=10000)
-    expect(_tile(page)).to_have_count(0, timeout=10000)
+    expect(DashboardPage(page).testbed_entry(NAME)).to_have_count(0, timeout=10000)

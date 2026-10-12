@@ -1,0 +1,37 @@
+{
+  "run_id": "20261012T053015Z",
+  "run_code": "RUN-150",
+  "timestamp": "2026-10-12T05:30:15Z",
+  "git_sha": "7def17d",
+  "git_branch": "shared-pages-library",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.9",
+  "duration": 37.661,
+  "tests": [
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_disabled_by_default[chromium]",
+      "outcome": "pass",
+      "duration": 11.968,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_math_updates_total_run_time[chromium]",
+      "outcome": "pass",
+      "duration": 10.421,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_delete_streams_to_zero.py::test_t7_deleting_all_streams_disables_apply[chromium]",
+      "outcome": "fail",
+      "duration": 15.233,
+      "failure_message": "AssertionError: Locator expected to contain text '0 streams'\nActual value: - img \"Apposite Technologies\"\n- text: \"Netropy Traffic Generator online Unit \\\"local\\\" \u2014 the traffic-generator unit this UI controls. Online: responding to health checks.\"\n- img\n- text: \"Oct 11, 2026 22:30:57 PDT Unit clock (America/Los_Angeles (PDT)) NTP server: not configured Oct 11, 2026 22:30:57 PDT\"\n- button \"Account\": TU test User\n- button \"Menu\":\n  - img\n- 'heading \"T7-DelStreams \u00b7 UID: d27414aa Copy UID d27414aa72",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-delete-streams-to-zero-py-test-t7-deleting-all-streams-disables-apply-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

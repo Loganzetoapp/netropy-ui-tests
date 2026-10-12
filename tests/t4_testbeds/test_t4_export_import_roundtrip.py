@@ -23,30 +23,13 @@ import json
 import pytest
 from playwright.sync_api import Page, expect
 
+from pages import DashboardPage
+
 NAME = "T4-ExportImport-DeleteMe"
-
-
-def _tile(page: Page, name: str = NAME):
-    return page.locator(".tb-tile").filter(has_text=name)
 
 
 def _testbeds_import_input(page: Page):
     return page.locator(".card-hdr").filter(has_text="Testbeds").locator('input[type="file"]')
-
-
-def _delete_if_present(page: Page, name: str = NAME):
-    tile = _tile(page, name)
-    if tile.count() > 0:
-        tile.locator('[data-tip="Delete"] button').click()
-        page.get_by_role("button", name="Delete", exact=True).click()
-        expect(_tile(page, name)).to_have_count(0, timeout=10000)
-
-
-@pytest.fixture
-def clean_up(dashboard: Page):
-    _delete_if_present(dashboard)
-    yield
-    _delete_if_present(dashboard)
 
 
 @pytest.mark.hardware_free
@@ -57,9 +40,9 @@ def test_t4_export_then_import_recreates_equivalent_testbed(dashboard: Page, cle
     page.get_by_placeholder("e.g. web-perf-01").fill(NAME)
     page.get_by_role("button", name="Traffic Engine", exact=True).click()
     page.get_by_role("button", name="Create draft", exact=True).click()
-    expect(_tile(page)).to_have_count(1, timeout=10000)
+    expect(DashboardPage(page).testbed_entry(NAME)).to_have_count(1, timeout=10000)
 
-    tile = _tile(page)
+    tile = DashboardPage(page).testbed_entry(NAME)
     tile.locator('[data-tip="Export config JSON"] button').click()
     expect(page.get_by_role("button", name="Export anyway", exact=True)).to_be_visible(
         timeout=10000
@@ -73,15 +56,15 @@ def test_t4_export_then_import_recreates_equivalent_testbed(dashboard: Page, cle
     download.save_as(str(export_path))
     exported = export_path.read_text()
 
-    _delete_if_present(page)
+    DashboardPage(page).remove_testbed(NAME)
 
     _testbeds_import_input(page).set_input_files(str(export_path))
-    expect(_tile(page)).to_have_count(1, timeout=10000)
+    expect(DashboardPage(page).testbed_entry(NAME)).to_have_count(1, timeout=10000)
 
     # Round-trip: export the re-imported testbed and compare config bodies
     # (name/feature/port/stream) — not the UID, which is always freshly
     # minted server-side on creation.
-    tile = _tile(page)
+    tile = DashboardPage(page).testbed_entry(NAME)
     tile.locator('[data-tip="Export config JSON"] button').click()
     expect(page.get_by_role("button", name="Export anyway", exact=True)).to_be_visible(
         timeout=10000

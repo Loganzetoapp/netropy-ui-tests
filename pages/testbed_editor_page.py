@@ -25,12 +25,24 @@ class TestbedEditorPage(BasePage):
         self.save_button = page.get_by_role("button", name="Save", exact=True)
 
     # --- steps --------------------------------------------------------
-    def open_step(self, number: int) -> None:
-        """Expand step `number`. Headers toggle, so click only when collapsed."""
-        header = self.page.get_by_role("button", name=re.compile(rf"^{number} ")).first
+    def step_header(self, number: int):
+        return self.page.get_by_role("button", name=re.compile(rf"^{number} ")).first
+
+    def open_step(self, number: int, only: bool = False) -> None:
+        """Expand step `number` (headers toggle, so click only when
+        collapsed). `only` also collapses the other steps, as Next does,
+        so page-wide lookups see just this step."""
+        header = self.step_header(number)
         if header.get_attribute("aria-expanded") != "true":
             header.click()
         expect(header).to_have_attribute("aria-expanded", "true")
+        if only:
+            for other in self.STEP_TITLES:
+                if other != number:
+                    h = self.step_header(other)
+                    if h.get_attribute("aria-expanded") == "true":
+                        h.click()
+                        expect(h).to_have_attribute("aria-expanded", "false")
 
     STEP_TITLES = {1: "Ports", 2: "Network Configuration", 3: "Streams", 4: "Traffic and Load Profile"}
 

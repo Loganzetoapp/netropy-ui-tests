@@ -1,0 +1,37 @@
+{
+  "run_id": "20261012T061846Z",
+  "run_code": "RUN-160",
+  "timestamp": "2026-10-12T06:18:46Z",
+  "git_sha": "2097e41",
+  "git_branch": "shared-pages-library",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.9",
+  "duration": 24.226,
+  "tests": [
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_default_32_is_one_host[chromium]",
+      "outcome": "pass",
+      "duration": 8.962,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_31_is_two_hosts[chromium]",
+      "outcome": "pass",
+      "duration": 7.587,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_25_is_126_hosts[chromium]",
+      "outcome": "pass",
+      "duration": 7.666,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

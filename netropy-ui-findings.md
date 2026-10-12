@@ -17,6 +17,29 @@ of the dashboard's Findings tab).
 
 ---
 
+## Observed 2026-10-11 on NTG 5.0.9 / WAN emulator 5.1.5 (not yet reproduced as tests)
+
+Seen while mapping the UI and building `pages/`. None was clicked through
+to confirm, because each would act on someone else's testbed or on shared hardware.
+
+1. **Ownership is enforced inconsistently in the UI.** Logged in as `test`,
+   on admin's active testbed "TE": the dashboard tile disables Start ("Owned
+   by admin. Only its owner or an admin can change it."), but its Stats page
+   shows `▶ Start`, `Start Traffic` and `Delete run` enabled. The Port Status
+   `Release` button is also enabled on admin's Ports 3/4, while
+   `GET /units/local/ports` reports `releasable: false` for them. Either the
+   server refuses (and the UI shouldn't offer it) or it doesn't (a permission bug).
+2. **Toasts cover the "← Dashboard" button** for about 5 s after any save or
+   create. A click on it waits until the toast fades. The suite now closes
+   toasts first.
+3. **Unlabelled controls (accessibility):** the Load profile checkbox, the
+   Add Stream modal's Name and Quantity fields, the Network step's CIDR select
+   (column header just "/") and the gateway field (accessible name is its
+   placeholder "none"). On the WAN emulator, no form control has an accessible
+   name, only `name=` attributes, and the icon buttons have empty names.
+4. **WAN emulator .213 Engine Log: "redundant power supply failure"**
+   (Oct 06 00:32:49). This is a hardware warning for whoever owns the box.
+
 ## Confirmed product issues
 
 Reproduced directly, not inferred from a single failed run.

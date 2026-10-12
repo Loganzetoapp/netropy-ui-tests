@@ -22,20 +22,22 @@ class DashboardPage(BasePage):
         """From anywhere in the app back to a loaded dashboard. Uses the
         SPA's own "← Dashboard" (a hard reload mid-run has crashed teardown
         before, and goto("/") stays on Settings) and discards unsaved edits.
-        Works with a modal left open by a failed step (teardown needs that)."""
+        Works with a modal left open by a failed step (teardown needs that).
+        Already on the dashboard: no reload."""
         self.close_modals()
+        self.dismiss_toasts()
+        port_status = self.page.get_by_text("Port Status")
         back = self.page.get_by_role("button", name="← Dashboard")
         if back.is_visible():
             back.click()
+            # Unsaved edits prompt for Discard; otherwise the dashboard appears.
             discard = self.page.get_by_role("button", name="Discard", exact=True)
-            try:
-                discard.wait_for(state="visible", timeout=1_500)
+            expect(port_status.or_(discard).first).to_be_visible(timeout=20_000)
+            if discard.is_visible():
                 discard.click()
-            except PlaywrightTimeoutError:
-                pass
-        else:
+        elif not (port_status.is_visible() and self.create_button.is_visible()):
             self.page.goto("/")
-        expect(self.page.get_by_text("Port Status")).to_be_visible(timeout=20_000)
+        expect(port_status).to_be_visible(timeout=20_000)
         self.wait_loaded()
 
     def close_modals(self) -> None:
@@ -115,6 +117,12 @@ class DashboardPage(BasePage):
             raise PortsBusyError(f"Ports in use by someone else: {held}")
 
     # --- testbeds -----------------------------------------------------
+    def saved_count(self) -> int:
+        """The Testbeds header's "N saved" count."""
+        self.wait_loaded()
+        text = self.testbeds_card.get_by_text(re.compile(r"^\d+ saved · \d+ active$")).inner_text()
+        return int(text.split("saved")[0].strip())
+
     def testbed_entry(self, name: str):
         """A testbed's card tile, matched on its exact name (so "T10-A"
         never also matches "T10-AB"). The page fixture pins card view."""
@@ -149,7 +157,7 @@ class DashboardPage(BasePage):
         for port in ports:
             editor.set_port_enabled(port, True)
         if step:
-            editor.open_step(step)
+            editor.open_step(step, only=True)
         if network_view:
             editor.set_network_view(network_view)
         return editor
@@ -224,13 +232,12 @@ class DashboardPage(BasePage):
         # Active testbeds get "Deactivate / Delete" first; deactivate so the
         # ports are released cleanly, then delete the inactive draft.
         deactivate = self.page.get_by_role("button", name="Deactivate", exact=True)
-        try:
-            deactivate.wait_for(state="visible", timeout=2_000)
-        except PlaywrightTimeoutError:
-            pass
-        else:
+        # The confirm is a plain div; its Delete is the last "Delete" button.
+        delete = self.page.get_by_role("button", name="Delete", exact=True)
+        expect(deactivate.or_(delete).first).to_be_visible(timeout=10_000)
+        if deactivate.is_visible():
             deactivate.click()
             expect(deactivate).to_be_hidden(timeout=30_000)
             tile.locator('[data-tip="Delete"] button').click()
-        self.page.get_by_role("button", name="Delete", exact=True).last.click()
+        delete.last.click()
         expect(tile).to_have_count(0, timeout=20_000)

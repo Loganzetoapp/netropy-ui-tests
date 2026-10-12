@@ -14,38 +14,9 @@ per T5, fires no network request).
 import pytest
 from playwright.sync_api import Page, expect
 
+from pages import DashboardPage
+
 NAME = "T13-DhcpPreAcq-DeleteMe"
-
-
-def _testbed_tile(page: Page):
-    return page.locator(".tb-tile").filter(has_text=NAME)
-
-
-def _delete_if_present(page: Page):
-    tile = _testbed_tile(page)
-    if tile.count() > 0:
-        tile.locator('[data-tip="Delete"] button').click()
-        page.get_by_role("button", name="Delete", exact=True).click()
-        expect(_testbed_tile(page)).to_have_count(0, timeout=10000)
-
-
-def _cleanup_from_wherever(page: Page):
-    if _testbed_tile(page).count() > 0:
-        _delete_if_present(page)
-        return
-    delete_btn = page.get_by_role("button", name="Delete", exact=True)
-    if delete_btn.count() > 0 and delete_btn.first.is_visible():
-        delete_btn.first.click()
-        page.locator("button.btn-danger", has_text="Delete").click()
-        expect(page.get_by_text("Port Status")).to_be_visible(timeout=10000)
-    _delete_if_present(page)
-
-
-@pytest.fixture
-def clean_up(dashboard: Page):
-    _cleanup_from_wherever(dashboard)
-    yield
-    _cleanup_from_wherever(dashboard)
 
 
 @pytest.mark.hardware_free
@@ -55,7 +26,7 @@ def test_t13_dhcp_pre_acq_renders_not_supported(dashboard: Page, clean_up):
     page.get_by_placeholder("e.g. web-perf-01").fill(NAME)
     page.get_by_role("button", name="Traffic Engine", exact=True).click()
     page.get_by_role("button", name="Create draft", exact=True).click()
-    tile = _testbed_tile(page)
+    tile = DashboardPage(page).testbed_entry(NAME)
     expect(tile).to_have_count(1, timeout=10000)
     tile.get_by_role("button", name="Edit").click()
     expect(page.get_by_role("heading", name="Ports", exact=False).first).to_be_visible(
