@@ -124,10 +124,27 @@ def test_t12_run_history_exports_delete_and_reports_badge(
     ramp_down.fill("5")
     ramp_down.press("Tab")
 
-    page.get_by_role("button", name="Apply", exact=True).click()
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
-    page.get_by_role("button", name="Start").click()
-    page.wait_for_timeout(2000)
+    # UI update (2026-09-17): the wizard's draft-testbed action bar no
+    # longer has a separate Apply ("Save & activate") + Start ("run
+    # traffic") pair — see
+    # test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the full
+    # writeup. A single "Start" click now activates the testbed AND
+    # starts traffic together, after a "Testbed is Inactive" confirmation
+    # modal ("Continue" to proceed), landing straight on the live
+    # Statistics view — no more standalone "Deactivate" state to wait on
+    # in between, and no second "Start" to click.
+    page.get_by_role("button", name="Start", exact=True).click()
+    page.wait_for_timeout(400)
+    continue_btn = page.get_by_role("button", name="Continue", exact=True)
+    if continue_btn.is_visible():
+        continue_btn.click()
+
+    # Activation + traffic start together carry the same `?wait=15`
+    # server-side contract the old two-step flow did, so give it the same
+    # real room rather than treating slow-but-working as a failure.
+    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+        timeout=75000
+    )
 
     # Wait for natural completion (ramp 5+10+5=20s).
     expect(page.get_by_text("LIVE · IDLE", exact=True)).to_be_visible(timeout=45000)

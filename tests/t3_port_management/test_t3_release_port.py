@@ -1,4 +1,4 @@
-"""T3 port management — release a port returns it to Available.
+"""T3 port management — release a port returns it to Unreserved (4.0: "Available").
 
 Standalone split of one test from test_t3_port_management_all.py so it
 can run in isolation; see that file for the full combined T3 suite.
@@ -14,7 +14,7 @@ from playwright.sync_api import Page, expect
 def _first_available_row(page: Page):
     for n in range(1, 9):
         row = page.get_by_role("row", name=f"Port {n}")
-        if row.get_by_text("Available", exact=True).is_visible():
+        if row.get_by_text("Unreserved", exact=True).is_visible():
             return row
     pytest.skip("No available port found — all 8 may be reserved by other users")
 
@@ -26,7 +26,7 @@ def available_port_row(dashboard: Page):
     release_button = row.get_by_role("button", name="Release")
     if release_button.is_visible():
         release_button.click()
-        expect(row.get_by_text("Available", exact=True)).to_be_visible()
+        expect(row.get_by_text("Unreserved", exact=True)).to_be_visible()
 
 
 @pytest.mark.stateful
@@ -36,5 +36,5 @@ def test_t3_release_port_returns_to_available(available_port_row):
     expect(row.get_by_role("button", name="Release")).to_be_visible()
 
     row.get_by_role("button", name="Release").click()
-    expect(row.get_by_text("Available", exact=True)).to_be_visible()
+    expect(row.get_by_text("Unreserved", exact=True)).to_be_visible()
     expect(row.get_by_role("button", name="Reserve")).to_be_visible()

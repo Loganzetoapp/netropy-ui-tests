@@ -56,6 +56,8 @@ def _create_and_open_network_config(page: Page, name: str = NAME):
     row1.locator(".toggle .track").click()
     row2.locator(".toggle .track").click()
     page.get_by_role("button", name="Next", exact=False).click()
+    # NTG 5.0 opens this step in Table view; these tests work on the cards.
+    page.get_by_role("tab", name="Cards", exact=False).click()
     expect(page.locator(".ne-pcard").first).to_be_visible(timeout=10000)
 
 

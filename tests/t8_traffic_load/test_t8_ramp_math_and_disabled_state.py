@@ -8,8 +8,9 @@ Confirmed by exploration:
   a sec/min unit `<select>`) and a line reading "Total run time =
   ramp-up + hold + ramp-down = <a> + <b> + <c> = <total>s", which
   recomputes live as the inputs change (10/60/10=80s -> 20/60/10=90s).
-- Iterations > 1 appends "· ×N iterations" to that same line rather than
-  pre-multiplying the shown total.
+- NTG 4.0 had an Iterations field that appended "· ×N iterations" to
+  that line. NTG 5.0 removed it (no Iterations control anywhere in the
+  5.0 frontend), so this test no longer covers it.
 """
 import pytest
 from playwright.sync_api import Page, expect
@@ -112,10 +113,3 @@ def test_t8_ramp_math_updates_total_run_time(dashboard: Page, clean_up):
     ramp_up.fill("20")
     ramp_up.press("Tab")
     expect(total_line).to_contain_text("20 + 60 + 10 = 90s")
-
-    iterations = page.locator(
-        'div[data-tip="How many times the ramp cycle repeats"] input'
-    )
-    iterations.fill("3")
-    iterations.press("Tab")
-    expect(total_line).to_contain_text("×3 iterations")

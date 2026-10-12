@@ -6,15 +6,78 @@ test plan (`netropy-ui-test-plan.md`) didn't match reality, and what's still
 waiting on an answer from Travis. See `netropy-ui-reference.md` for the
 control-by-control UI inventory this was built alongside.
 
-Target: `192.168.173.111:8080`, a dedicated lab VM (confirmed not shared —
-see "Plan questions the product answered" below). Suite coverage: all 13
-plan areas (T1–T13), 91 automated tests.
+Target: **NTG 5.0 at `192.168.173.89`** since 2026-09-30 (firmware 5.0.7 →
+5.0.7b). Entries before that were found on the 4.0 VM at
+`192.168.173.111:8080`, a dedicated lab VM (confirmed not shared — see "Plan
+questions the product answered" below). Suite coverage: plan areas T1–T14.
+
+The running write-up of the 5.0 work — status table, evidence, and what
+changed in the suite — is `docs/ntg5-investigation-log.md` (shown at the top
+of the dashboard's Findings tab).
 
 ---
 
 ## Confirmed product issues
 
 Reproduced directly, not inferred from a single failed run.
+
+### NTG 5.0: a frame smaller than the stream's header size silently loses the run
+Found 2026-10-01 on 5.0.7b (`192.168.173.89`), T14. If a stream's frame
+size is smaller than the headers that stream actually sends (plus the
+4-byte FCS), Start is accepted (activate and start both succeed, Stop is
+shown), the run looks live for a while, and then Statistics falls back to
+"LIVE · IDLE — Ready to start traffic. Ports are armed and idle." **No run is
+saved and no error or toast appears.** The unit itself stays healthy — the
+next run works. The editor accepts any frame size, so nothing warns the user.
+
+Measured on Port 3 ⇄ 4 at 500 Mbps (lost = no saved run; every pass had
+0.000 % loss): UDP, ICMP, ARP pass at 64 B (they need ~46 B). UDP/IPv6
+(needs 66 B) is lost at 64 B, passes at 128 B. DNS (~70 B) lost at 64 B,
+passes at 256 B. NTP (94 B) lost at 90 B (6/6), passes at 128 B. **TCP's
+cut-off is exactly 70 B** — 64, 66 and 68 B are lost; 70, 72, 80, 96 and
+128 B pass — matching a 32-byte TCP header (20 B + 12 B of options). TCP/IPv6
+(90 B) lost at 64 B, passes at 128 B. HTTP lost at 64 B, passes at 256 B
+and 1500 B. No counter-example across 9 protocols.
+
+This also explains the TCP/HTTP 64-byte "bad state" reported by email on
+2026-09-30: on 5.0.7b those runs are lost the same way, but the unit doesn't
+stay broken (health stays online; a UDP canary right after passes). On 4.0,
+NTP at 90 B ran fine, so this may be a 5.0 regression; the 4.0 "VXLAN: Start
+never begins traffic" entry below had the same "armed and idle" symptom.
+The suite reports these as **system failure**.
+Status: confirmed and isolated — ready to report to the engineer (ask: validate
+frame size against the stream's headers, or handle short frames, and never
+end a run with no record and no error).
+— `tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py`,
+`tests/t14_64b_frame_bad_state/test_t14_64b_frame_protocols.py`
+
+### NTG 5.0: Port 4 link speed changes on its own
+Seen 2026-09-30/10-01 on `192.168.173.89`. Port 4 reported 10G, then 1G,
+then 0 M (link still "up"), then 1G again, while the other seven ports
+stayed at 10G. At 1G the Port 3 ⇄ 4 path tops out around 1.4 Gbps total (a
+3 Gbps two-stream test lost 52.5 %). In the first 5.0 probe run Port 4 also
+transmitted only ~80–100 Mbps against a configured 1000 Mbps while Port 3
+sent the full rate — the run still showed PASS, and the headline "Avg TX"
+hid it (only the Per-Port table shows it). Ports 3/4 are cabled through the
+WAN emulator, so the cable, SFP or emulator port are likely suspects.
+Status: unresolved, needs someone at the rack; the ~1/10-rate observation is
+a single observation.
+— T10 lifecycle tests on Port 3 ⇄ 4
+
+**Update 2026-10-05, reproduced on `192.168.173.212` (4/4 runs) and measured
+by two boxes:** with both ports stored as `rate-mbps: 500`, Port 4 sends
+46.5 Mbps on average (90,222 frames) against Port 3's 465.5 Mbps (902,220).
+The WAN emulator in the path counts exactly the same frames per direction,
+so the shortfall is real transmission, not a stats error. The run PASSes with
+0 % loss, because loss only compares sent with received. The NTG port list
+shows Port 4 at `speed-mbps: 0` (link "up"), the testbed stores it as 10000,
+and the emulator port it's cabled to links at 1000 Mbps. Likely cause: the
+rate is applied as a fraction of the nominal 10G (5 %) on a link that's
+really 1G, giving 50 Mbps. Two product issues, whatever the link cause:
+(1) a port can silently send a tenth of its configured rate, and (2) the
+verdict and loss % don't reveal it. Suggest a pass/fail rule on TX rate vs
+configured rate (the NTG's "min Rx % of line rate" criterion may cover it).
+— T15 (`tests/t15_wan_emulator`), run history `metrics` checks
 
 ### "Copy UID" silently does nothing
 The copy-to-clipboard control next to every testbed/profile UID produces no
@@ -452,6 +515,17 @@ generate real traffic.
 ---
 
 ## Testing environment
+
+**NTG 5.0 unit (`192.168.173.89`), from 2026-09-30:** only Port 3 ⇄ Port 4
+are cabled as a pair — runs on 1 ⇄ 2 and 5 ⇄ 6 transmit but receive nothing
+(e.g. 304 Mbps sent, 0.0 received → FAIL), so tests there fail for cabling,
+not product, reasons. Port 4's link speed is unstable (see "Port 4 link
+speed changes on its own"). The unit was rebooted and upgraded from 5.0.7 to
+5.0.7b mid-session (~20:00 PDT 2026-09-30). All 71 hardware-free tests pass
+3/3 on 5.0; the traffic tests are being rebuilt for 5.0's Start flow — see
+`docs/ntg5-investigation-log.md`.
+
+**4.0 VM (`192.168.173.111:8080`), before 2026-09-30:**
 
 The full 85-test suite was run once, end-to-end, headless and serial: **81
 passed, 1 passed-as-expected-fail, 3 failed**, in 18m11s. Both root causes
@@ -929,3 +1003,1904 @@ Non-2xx network responses:
   POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/3/release -> 403 Forbidden
 ```
 Trace: `webapp-artifacts/57fb3cfe-efa6-447e-bed8-22cc7deb64ba/1/trace.zip`
+
+### 2026-09-17 23:42 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_udp_1gbps_1500b.py::test_t10_t12_lifecycle_udp_1gbps_1500b
+
+**Status:** pending review
+
+Failure message: playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".tb-tile").filter(has_text="T10-Life-UDP").get_by_role("button", name="Stats")
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-UDP"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-Life-UDP', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-Life-UDP"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.0.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.0.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.0.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.0.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '10', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '50', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '10', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', '
+...(truncated)
+```
+Screenshot: `webapp-artifacts/a8e8afd9-4d00-401d-9582-2ab3aec52b1b/1/test-failed-1.png`
+Trace: `webapp-artifacts/a8e8afd9-4d00-401d-9582-2ab3aec52b1b/1/trace.zip`
+
+### 2026-09-17 23:44 UTC — tests/t10_t12_lifecycle/test_t10_edit_config_while_active.py::test_t10_edit_config_while_active
+
+**Status:** pending review
+
+Failure message: playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for get_by_role("button", name="Apply", exact=True)
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-EditLive"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-EditLive', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-EditLive"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.13.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.13.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.13.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.13.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '90', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Apply"s]', 'strict': True, 'timeout': 30000})  FAILED: Timeout 30000ms exceeded.
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Discard"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Discard"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> 
+...(truncated)
+```
+Screenshot: `webapp-artifacts/b4577bf7-9d31-49cf-8e95-1b521891bbba/1/test-failed-1.png`
+Trace: `webapp-artifacts/b4577bf7-9d31-49cf-8e95-1b521891bbba/1/trace.zip`
+
+### 2026-09-17 23:50 UTC — tests/t10_t12_lifecycle/test_t10_clone_while_active.py::test_t10_clone_while_active
+
+**Status:** pending review
+
+Failure message: AssertionError: REAL BUG: the CLONE of a live testbed came up already in an ACTIVE (applied) state — its tile shows Start/Stats instead of Activate — despite this test never clicking Activate on it. A clone should land as a fresh inactive draft. Distinct from the Edit-while-active bug (which corrupts the ORIGINAL's run) — this is the clone itself inheriting state it never earned.
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-CloneX', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.17.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.17.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.17.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.17.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '90', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': '.tb-tile >> internal:has="div[title=\\"T10-CloneX\\"]" >> internal:role=button[name="Stop"i]', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+  Frame.click({'selector': '.tb-tile >> internal:has="div[title=\\"T10-CloneX\\"]" >> internal:role=button[name="Stats"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Per-Port Aggregate Statistics"i', 'expression': 'to.be.visible', 'timeout': 15000, 'isNo
+...(truncated)
+```
+Screenshot: `webapp-artifacts/d3d377ec-ce33-417e-bac1-6d403fca05b0/1/test-failed-1.png`
+Trace: `webapp-artifacts/d3d377ec-ce33-417e-bac1-6d403fca05b0/1/trace.zip`
+
+### 2026-09-18 00:03 UTC — tests/t10_t12_lifecycle/test_t10_clone_while_active.py::test_t10_clone_while_active
+
+**Status:** pending review
+
+Failure message: AssertionError: REAL BUG: the CLONE of a live testbed came up already in an ACTIVE (applied) state — its tile shows Start/Stats instead of Activate — despite this test never clicking Activate on it. A clone should land as a fresh inactive draft. Distinct from the Edit-while-active bug (which corrupts the ORIGINAL's run) — this is the clone itself inheriting state it never earned.
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i'})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i >> nth=-1'})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i >> nth=-1 >> internal:role=button[name="Stop"s]'})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i >> nth=-1 >> [data-tip="Delete"] button'})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i >> nth=-1 >> [data-tip="Delete"] button', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Delete"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Delete"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i >> nth=-1', 'expression': 'to.have.count', 'expectedNumber': 0, 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-CloneX', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-CloneX"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.17.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.17.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.17.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.17.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '90', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 
+...(truncated)
+```
+Screenshot: `webapp-artifacts/8511ff77-3277-4f26-adc4-3d22216b0f0c/1/test-failed-1.png`
+Trace: `webapp-artifacts/8511ff77-3277-4f26-adc4-3d22216b0f0c/1/trace.zip`
+
+### 2026-09-18 00:06 UTC — tests/t10_t12_lifecycle/test_t10_deactivate_mid_run.py::test_t10_deactivate_mid_run_skips_stop_cleanly
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:06:16 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:06:16 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 25%
+- text: 25 %
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-DeactLive"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-DeactLive', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-DeactLive"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.11.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.11.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.11.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.11.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '90', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': '.tb-tile >> internal:has-text="T10-DeactLive"i >> internal:role=button[name="Stop"i]', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+  Frame.innerText({'selector': 'internal:role=row[name="Port 3"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 15000})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-DeactLive"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout'
+...(truncated)
+```
+Screenshot: `webapp-artifacts/fedd6194-acce-49ba-8940-741106dc9fe5/1/test-failed-1.png`
+Trace: `webapp-artifacts/fedd6194-acce-49ba-8940-741106dc9fe5/1/trace.zip`
+
+### 2026-09-18 00:06 UTC — tests/t10_t12_lifecycle/test_t10_default_addressing_activation.py::test_t10_default_addressing_activation
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:06:40 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:06:40 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 25%
+- text: 25 %
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-DefaultAddr"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Page.screenshot({'fullPage': False, 'type': 'png', 'timeout': 30000})
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/1/release -> 403 Forbidden
+```
+Screenshot: `webapp-artifacts/67a12e8f-b014-4cbc-8ade-1f49eb8ee42d/1/test-failed-1.png`
+Trace: `webapp-artifacts/67a12e8f-b014-4cbc-8ade-1f49eb8ee42d/1/trace.zip`
+
+### 2026-09-18 00:07 UTC — tests/t10_t12_lifecycle/test_t10_double_click_start_race.py::test_t10_double_click_start_race
+
+**Status:** pending review
+
+Failure message: AssertionError: BUG: double-clicking Continue did not land cleanly in the Statistics view within 15s — the second click event appears to have broken navigation (stuck on the modal, blank, or otherwise off the expected post-Continue route).
+assert False
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-DblClick"i'})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-DblApply"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-DblClick', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-DblClick"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.9.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.9.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.9.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.9.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '10', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '60', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '10', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="Start"s]', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'clickCount': 2, 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 2000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})  FAILED: Expect failed
+  Frame.innerText({'selector': 'body', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Discard"s]', 
+...(truncated)
+```
+Screenshot: `webapp-artifacts/9e4b43c8-57a3-4494-bec6-f26cc9431fe2/1/test-failed-1.png`
+Trace: `webapp-artifacts/9e4b43c8-57a3-4494-bec6-f26cc9431fe2/1/trace.zip`
+
+### 2026-09-18 00:09 UTC — tests/t10_t12_lifecycle/test_t10_edit_config_while_active.py::test_t10_edit_config_while_active
+
+**Status:** pending review
+
+Failure message: AssertionError: The Result cell for this run is still empty after a generous 20s poll (ruling out the population-race the UDP reference test's own PASS check guards against) — the run's recorded outcome appears to have been genuinely lost following the mid-run edit attempt.
+assert ''
+ +  where '' = &lt;built-in method strip of str object at 0x100610670&gt;()
+ +    where &lt;built-in method strip of str object at 0x100610670&gt; = ''.strip
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-EditLive"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-EditLive', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-EditLive"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.13.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.13.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.13.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.13.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '90', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': '.tb-tile >> internal:has-text="T10-EditLive"i >> internal:role=button[name="Stop"i]', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-EditLive"i >> internal:role=button[name="Stats"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Per-Port Aggregate Statistics"i', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+
+...(truncated)
+```
+Screenshot: `webapp-artifacts/78f21499-78e4-433a-b87d-47e9d6eceb61/1/test-failed-1.png`
+Trace: `webapp-artifacts/78f21499-78e4-433a-b87d-47e9d6eceb61/1/trace.zip`
+
+### 2026-09-18 00:12 UTC — tests/t10_t12_lifecycle/test_t10_live_view_badges_and_controls.py::test_t10_live_badges_and_t11_stats_controls
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:12:05 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:12:05 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- 'heading "T10-LiveView · UID: 5557ad49 5557ad492b0b457abcfeb85317755fa7" [level=1]':
+  - te
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-LiveView"i'})
+  Frame.innerText({'selector': '.card-hdr >> internal:has-text="Testbeds"i', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': 'internal:attr=[placeholder="e.g. web-perf-01"i]', 'value': 'T10-LiveView', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': '.tb-tile >> internal:has-text="T10-LiveView"i', 'expression': 'to.have.count', 'expectedNumber': 1, 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-LiveView"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Ports"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+  Frame.click({'selector': 'tr >> nth=1 >> .toggle .track', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'tr >> nth=2 >> .toggle .track', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': 'tr >> nth=1 >> input[placeholder="line rate"]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'tr >> nth=1 >> input[placeholder="line rate"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': 'tr >> nth=2 >> input[placeholder="line rate"]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'tr >> nth=2 >> input[placeholder="line rate"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=button[name="✚ Add Stream"s]', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=button[name="ICMP"s]', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="ICMP"s]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': '.pill >> internal:has-text="used"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'div >> internal:has-text="Disabled \\u2014 traffic runs at full rate"i >> nth=-1 >> .toggle .track', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fg >> internal:has-text="Ramp up"i >> input[type="number"]', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': '.fg >> internal:has-text="Ramp up"i >> input[type="number"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fg >> internal:has-text="Hold time"i >> input[type="number"]', 'value': '15', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': '.fg >> internal:has-text="Hold time"i >> input[type="number"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fg >> internal:has-text="Ramp down"i >> input[type="number"]', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': '.fg >> internal:has-text="Ramp down"i >> input[type="number"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Discard"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Page.screenshot({'fullPage': False, 'type': 'png', 'timeout': 30000})
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/1/release -> 403 Forbidden
+```
+Screenshot: `webapp-artifacts/caff9efc-28c8-4932-9938-0a0f75b3ecdf/1/test-failed-1.png`
+Trace: `webapp-artifacts/caff9efc-28c8-4932-9938-0a0f75b3ecdf/1/trace.zip`
+
+### 2026-09-18 00:15 UTC — tests/t10_t12_lifecycle/test_t10_rapid_stop_restart_cycle.py::test_t10_rapid_stop_restart_cycle
+
+**Status:** pending review
+
+Failure message: playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".tb-tile").filter(has_text="T10-RapidCycle").get_by_role("button", name="Stop")
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-RapidCycle"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-RapidCycle', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-RapidCycle"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.7.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.7.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.7.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.7.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '120', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': '.tb-tile >> internal:has-text="T10-RapidCycle"i >> internal:role=button[name="Stop"i]', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-RapidCycle"i >> internal:role=button[name="Stats"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Per-Port Aggregate Statistics"i', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': F
+...(truncated)
+```
+Screenshot: `webapp-artifacts/675853ad-c889-4e40-8c72-f6bd0ecac5b1/1/test-failed-1.png`
+Trace: `webapp-artifacts/675853ad-c889-4e40-8c72-f6bd0ecac5b1/1/trace.zip`
+
+### 2026-09-18 00:16 UTC — tests/t10_t12_lifecycle/test_t10_stop_mid_run.py::test_t10_stop_mid_run_ends_run_and_records_result
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:16:12 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:16:12 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 25%
+- text: 25 %
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-StopMidRun"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Page.screenshot({'fullPage': False, 'type': 'png', 'timeout': 30000})
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/1/release -> 403 Forbidden
+```
+Screenshot: `webapp-artifacts/3b04ea5f-d4d6-4707-b4bf-03f673c34e88/1/test-failed-1.png`
+Trace: `webapp-artifacts/3b04ea5f-d4d6-4707-b4bf-03f673c34e88/1/trace.zip`
+
+### 2026-09-18 00:18 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_dns_200mbps_128b.py::test_t10_t12_lifecycle_dns_200mbps_128b
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:17:58 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:17:58 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 25%
+- text: 25 %
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-DNS"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Page.screenshot({'fullPage': False, 'type': 'png', 'timeout': 30000})
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/1/release -> 403 Forbidden
+```
+Screenshot: `webapp-artifacts/6fa70c55-b379-4464-a73d-602445c23708/1/test-failed-1.png`
+Trace: `webapp-artifacts/6fa70c55-b379-4464-a73d-602445c23708/1/trace.zip`
+
+### 2026-09-18 00:18 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_icmp_5gbps_64b.py::test_t10_t12_lifecycle_icmp_5gbps_64b
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:18:29 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:18:29 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 25%
+- text: 25 %
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-ICMP"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Page.screenshot({'fullPage': False, 'type': 'png', 'timeout': 30000})
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/1/release -> 403 Forbidden
+```
+Screenshot: `webapp-artifacts/a1a2d844-28ae-4b78-8bb1-a5d3225caad3/1/test-failed-1.png`
+Trace: `webapp-artifacts/a1a2d844-28ae-4b78-8bb1-a5d3225caad3/1/trace.zip`
+
+### 2026-09-18 00:20 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_multistream_tcp_icmp_3gbps.py::test_t10_t12_lifecycle_multistream_tcp_icmp_3gbps
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:20:15 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:20:15 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- img
+- 'heading "Statistics — T10-Life-Multi · UID: 16e7d013 16e7d0136e80449fa0ea5a199778677
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-Multi"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-Life-Multi', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-Life-Multi"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '3', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '3', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.6.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '27'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.6.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '27'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.6.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.6.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="TCP"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="TCP Edit TCP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '900', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="ICMP"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="ICMP Edit ICMP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'td:nth-child(5) > .fc', 'expression': 'to.have.count', 'expectedNumber': 2, 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=1', 'value': '100', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=1', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="TCP Edit TCP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=button[name="ICMP Edit ICMP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '25', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key
+...(truncated)
+```
+Screenshot: `webapp-artifacts/48d4f1c5-fa31-433b-9700-ee202ef052fc/1/test-failed-1.png`
+Trace: `webapp-artifacts/48d4f1c5-fa31-433b-9700-ee202ef052fc/1/trace.zip`
+
+### 2026-09-18 00:22 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_ntp_50mbps_90b.py::test_t10_t12_lifecycle_ntp_50mbps_90b
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:22:52 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:22:52 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 25%
+- text: 24.9
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-NTP"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-Life-NTP', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-Life-NTP"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> select >> nth=2', 'strict': True, 'options': [{'label': 'Mbps'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '50', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> select >> nth=2', 'strict': True, 'options': [{'label': 'Mbps'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '50', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.8.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '29'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.8.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '29'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.8.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.8.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="NTP"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '90', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '4', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '20', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '4', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Por
+...(truncated)
+```
+Screenshot: `webapp-artifacts/f36a18fb-88b8-4b36-b92c-6bf47d11da38/1/test-failed-1.png`
+Trace: `webapp-artifacts/f36a18fb-88b8-4b36-b92c-6bf47d11da38/1/trace.zip`
+
+### 2026-09-18 00:24 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_tcp_2gbps_512b.py::test_t10_t12_lifecycle_tcp_2gbps_512b
+
+**Status:** pending review
+
+Failure message: failed on teardown with "AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:24:08 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:24:08 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CP
+
+Trace summary:
+```
+(no trace captured)
+```
+
+### 2026-09-18 00:27 UTC — tests/t10_t12_lifecycle/test_t10_two_testbeds_simultaneous.py::test_t10_two_testbeds_run_simultaneously
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:27:04 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:27:04 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009 CPU
+- img: 25%
+- text: 25 %
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Concur-A"i'})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Concur-B"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Page.screenshot({'fullPage': False, 'type': 'png', 'timeout': 30000})
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/1/release -> 403 Forbidden
+```
+Screenshot: `webapp-artifacts/7159664b-6330-4f8c-94de-ae31854996f3/1/test-failed-1.png`
+Trace: `webapp-artifacts/7159664b-6330-4f8c-94de-ae31854996f3/1/trace.zip`
+
+### 2026-09-18 00:28 UTC — tests/t10_t12_lifecycle/test_t10_unrelated_action_during_live_run.py::test_t10_unrelated_action_during_live_run
+
+**Status:** pending review
+
+Failure message: AssertionError: T10-LiveCtrl dropped out of ACTIVE state (Stats button gone) purely as a side effect of creating and deleting a completely unrelated, zero-port draft testbed elsewhere on the box — this test never touched T10-LiveCtrl itself after confirming it was live. This would be a materially BIGGER finding than the existing Edit/Clone-while-active bug: it would mean the scope of 'Confirmed product issues' needs to widen from 'a write referencing the specific live testbed' to 'any backend wr
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Unrelated"i'})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-LiveCtrl"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-LiveCtrl', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-LiveCtrl"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.22.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.22.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.22.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.22.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="UDP Edit UDP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '1500', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '90', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(3) > .fc > input', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(3) > .fc > input', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="Save"s]', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="Save"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="Start"s]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'timeout': 5000, 'strict': True})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'timeout': 8000, 'strict': True})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Discard"s]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:text="Port Status"i', 'strict': True, 'timeout': 30000})
+  Frame.expec
+...(truncated)
+```
+Screenshot: `webapp-artifacts/bb5b29ae-4269-43b4-87cf-16e4453d7842/1/test-failed-1.png`
+Trace: `webapp-artifacts/bb5b29ae-4269-43b4-87cf-16e4453d7842/1/trace.zip`
+
+### 2026-09-18 00:29 UTC — tests/t10_t12_lifecycle/test_t12_run_history_and_exports.py::test_t12_run_history_exports_delete_and_reports_badge
+
+**Status:** pending review
+
+Failure message: AssertionError: Locator expected to be visible
+Actual value: - img "Apposite Technologies"
+- text: "Netropy Traffic Generator online Unit \"local\" — the traffic-generator unit this UI controls. Online: responding to health checks."
+- img
+- text: "Sep 17, 2026 17:29:48 UTC Unit clock NTP server: not configured (sandbox) Sep 17, 2026 17:29:48 UTC"
+- button "Account": TU test User
+- button "Menu":
+  - img
+- 'heading "T12-RunHistory · UID: 4797578d 4797578d80c44117ad78cda461957491" [level=1]':
+  - 
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 403 (Forbidden)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T12-RunHistory"i'})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': 'internal:attr=[placeholder="e.g. web-perf-01"i]', 'value': 'T12-RunHistory', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': '.tb-tile >> internal:has-text="T12-RunHistory"i', 'expression': 'to.have.count', 'expectedNumber': 1, 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T12-RunHistory"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Ports"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+  Frame.click({'selector': 'tr >> nth=1 >> .toggle .track', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'tr >> nth=2 >> .toggle .track', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': 'tr >> nth=1 >> input[placeholder="line rate"]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'tr >> nth=1 >> input[placeholder="line rate"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': 'tr >> nth=2 >> input[placeholder="line rate"]', 'value': '1', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'tr >> nth=2 >> input[placeholder="line rate"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=button[name="✚ Add Stream"s]', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=button[name="ICMP"s]', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="ICMP"s]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': '.pill >> internal:has-text="used"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'div >> internal:has-text="Disabled \\u2014 traffic runs at full rate"i >> nth=-1 >> .toggle .track', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fg >> internal:has-text="Ramp up"i >> input[type="number"]', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': '.fg >> internal:has-text="Ramp up"i >> input[type="number"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fg >> internal:has-text="Hold time"i >> input[type="number"]', 'value': '10', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': '.fg >> internal:has-text="Hold time"i >> input[type="number"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fg >> internal:has-text="Ramp down"i >> input[type="number"]', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': '.fg >> internal:has-text="Ramp down"i >> input[type="number"]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Start"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Continue"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Statistics"i]', 'expression': 'to.be.visible', 'timeout': 75000, 'isNot': False})  FAILED: Expect failed
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Discard"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.isVisible({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name="Port 1"i] >> internal:role=button[name="Release"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Deactivate & release"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name="Port 1"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})  FAILED: Expect failed
+  Page.screenshot({'fullPage': False, 'type': 'png', 'timeout': 30000})
+
+Non-2xx network responses:
+  POST http://192.168.173.111:8080/ctrl/v1/units/local/ports/1/release -> 403 Forbidden
+```
+Screenshot: `webapp-artifacts/0763b57d-1363-4dc7-9acf-f2985647b3b6/1/test-failed-1.png`
+Trace: `webapp-artifacts/0763b57d-1363-4dc7-9acf-f2985647b3b6/1/trace.zip`
+
+### 2026-09-18 00:43 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_multistream_tcp_icmp_2gbps.py::test_t10_t12_lifecycle_multistream_tcp_icmp_2gbps
+
+**Status:** pending review
+
+Failure message: playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".tb-tile").filter(has_text="T10-Life-Multi").get_by_role("button", name="Stats")
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-Multi"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  
+...(truncated)
+```
+Screenshot: `webapp-artifacts/b5e04048-a257-4106-8288-50dc59d8228a/1/test-failed-1.png`
+Trace: `webapp-artifacts/b5e04048-a257-4106-8288-50dc59d8228a/1/trace.zip`
+
+### 2026-09-18 18:06 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_multistream_tcp_icmp_2gbps.py::test_t10_t12_lifecycle_multistream_tcp_icmp_2gbps
+
+**Status:** pending review
+
+Failure message: playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".tb-tile").filter(has_text="T10-Life-Multi").get_by_role("button", name="Stats")
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Page error (JS exception): V.dispatchAction is not a function
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-Multi"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-Life-Multi', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-Life-Multi"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.6.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '27'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.6.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '27'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.6.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.6.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="TCP"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="TCP Edit TCP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '900', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="ICMP"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="ICMP Edit ICMP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'td:nth-child(5) > .fc', 'expression': 'to.have.count', 'expectedNumber': 2, 'timeout': 10000, 'isNot': False})
+...(truncated)
+```
+Screenshot: `webapp-artifacts/3c414d66-7e4f-46cb-8968-2a72fcfb5e18/1/test-failed-1.png`
+Trace: `webapp-artifacts/3c414d66-7e4f-46cb-8968-2a72fcfb5e18/1/trace.zip`
+
+### 2026-09-18 18:08 UTC — tests/t10_t12_lifecycle/test_t10_t12_lifecycle_multistream_tcp_icmp_3gbps.py::test_t10_t12_lifecycle_multistream_tcp_icmp_3gbps
+
+**Status:** pending review
+
+Failure message: playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator(".tb-tile").filter(has_text="T10-Life-Multi").get_by_role("button", name="Stats")
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has-text="T10-Life-Multi"i'})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 3"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 3"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Available"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=row[name="Port 4"i] >> internal:role=button[name="Reserve"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=row[name="Port 4"i] >> internal:text="Reserved"s', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="e.g. web-perf-"i]', 'value': 'T10-Life-Multi', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': '.tb-tile >> internal:has-text="T10-Life-Multi"i >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(3) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'tr:nth-child(4) > td > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '3', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'value': '3', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'internal:role=row[name=/^Port 4\\b/] >> internal:attr=[placeholder="line rate"i]', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="2 Network Configuration per-"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=0', 'value': '10.0.6.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': '.seg >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '27'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="10.1.0.10"i] >> nth=1', 'value': '10.0.6.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.selectOption({'selector': 'div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main > div > div:nth-child(2) > .ne-combo > select', 'strict': True, 'options': [{'valueOrLabel': '27'}], 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=2', 'value': '10.0.6.1', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'internal:role=textbox[name="auto"i] >> nth=0', 'value': '10.0.6.2', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="3 Streams traffic flows — at"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="TCP"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="TCP Edit TCP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=0', 'value': '900', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=0', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="✚ Add Stream"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'internal:role=button[name="ICMP"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.isVisible({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Add stream"s]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="ICMP Edit ICMP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'td:nth-child(5) > .fc', 'expression': 'to.have.count', 'expectedNumber': 2, 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'td:nth-child(5) > .fc >> nth=1', 'value': '100', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'td:nth-child(5) > .fc >> nth=1', 'key': 'Enter', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.expect({'selector': 'internal:role=button[name="TCP Edit TCP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': 'internal:role=button[name="ICMP Edit ICMP"i] >> nth=0', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': 'internal:role=button[name="4 Traffic and Load Profile"i]', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.click({'selector': 'div:nth-child(2) > div > .toggle > .track', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.queryCount({'selector': '.fc > input >> nth=0'})
+  Frame.isVisible({'selector': '.fc > input >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': '.fc > input >> nth=0', 'value': '5', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.fill({'selector': 'div:nth-child(2) > .fc > input', 'value': '25', 'strict': True, 'timeout': 30000})
+  Frame.waitForTimeout({'waitTimeout': 400})
+  Frame.press({'selector': 'div:nth-child(2) > .fc > input', 'key
+...(truncated)
+```
+Screenshot: `webapp-artifacts/2640bca4-a265-477e-b4f4-da4732e574f4/1/test-failed-1.png`
+Trace: `webapp-artifacts/2640bca4-a265-477e-b4f4-da4732e574f4/1/trace.zip`
+
+### 2026-10-06 03:18 UTC — tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency
+
+**Status:** pending review
+
+Failure message: failed on setup with "playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+Call log:
+  - navigating to "http://192.168.173.89/", waiting until "load""
+
+Trace summary:
+```
+(no trace captured)
+```

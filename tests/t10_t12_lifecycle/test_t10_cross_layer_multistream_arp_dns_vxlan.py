@@ -357,26 +357,36 @@ def test_t10_cross_layer_multistream_arp_dns_vxlan(dashboard: Page, clean_testbe
     _buffer(page)
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
-    page.get_by_role("button", name="Apply", exact=True).click()
+    # UI update (2026-09-17): the wizard's save-and-activate button for a
+    # freshly-created draft testbed was renamed from "Apply" to "Start" —
+    # the old two-step Apply ("Save & activate") -> Start ("run traffic")
+    # flow is gone, replaced by a single "Start" that does both. Clicking
+    # it pops a "Testbed is Inactive" confirmation modal ("Continue" to
+    # proceed) before it activates and starts traffic together, landing
+    # straight on the live Statistics view — no more separate "Deactivate"
+    # state to wait on, and no second "Start" to click. See
+    # test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the
+    # original writeup.
+    page.get_by_role("button", name="Start", exact=True).click()
     _buffer(page)
+    continue_btn = page.get_by_role("button", name="Continue", exact=True)
+    if continue_btn.is_visible():
+        continue_btn.click()
 
     # --- Activate / start traffic ---
-    # "Apply" ("Save & activate on the unit") swaps the whole edit-view
-    # action bar from Delete/Save/Apply to an active-testbed bar with
-    # Delete/Deactivate/Stats/Save/Start — this doesn't happen instantly.
-    # The activate call itself carries a `?wait=15` server-side contract
-    # and can legitimately take longer than 30s plus UI lag to resolve.
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
-    page.get_by_role("button", name="Start").click()
-
-    # Clicking Start (from inside the wizard's post-Apply action bar)
-    # navigates into the Statistics view. Check the live Statistics page
+    # Activation + traffic start together carry the same `?wait=15`
+    # server-side contract the old two-step flow did, so give it the same
+    # real room rather than treating slow-but-working as a failure — this
+    # also doubles as the activation-succeeded check the old
+    # wait-for-Deactivate used to provide. Check the live Statistics page
     # itself before heading back to the dashboard — this is the actual
     # cross-layer question this test exists to answer: does the page
     # render all three streams correctly (Aggregate vs Per Stream toggle,
     # Stream Statistics table), or does mixing categories like this break
     # rendering, drop a stream, or show garbage numbers?
-    page.wait_for_timeout(2000)
+    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+        timeout=75000
+    )
     per_stream_toggle = page.get_by_role("button", name="Per Stream")
     if per_stream_toggle.is_visible():
         per_stream_toggle.click()

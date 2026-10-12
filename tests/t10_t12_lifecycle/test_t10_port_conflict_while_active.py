@@ -19,10 +19,10 @@ row (captured before anything reserves it, then again once A holds it)
 stands in for the cross-port "known available" comparison other tests in
 this file would normally use.
 
-Scenario: build, Apply, and Start Testbed A on Port 3 + Port 4 — real
-traffic, actually running. While A is live, open a second testbed's
-(Testbed B) wizard and, on its Ports step, attempt to also enable Port 3
-and Port 4 — exactly the pair A is actively using.
+Scenario: build and Start Testbed A on Port 3 + Port 4 — real traffic,
+actually running. While A is live, open a second testbed's (Testbed B)
+wizard and, on its Ports step, attempt to also enable Port 3 and Port 4 —
+exactly the pair A is actively using.
 
 Expected/correct behavior (asserted): the product should not let Testbed
 B silently claim ports a live testbed is already using. That could
@@ -30,24 +30,47 @@ reasonably show up as — the ports' rows/toggles in B's Ports step
 reading as unavailable and refusing to toggle on; the dashboard row
 showing something other than "Available" while A holds them; or, at
 worst, an explicit, visible block/error if the wizard lets the toggle
-proceed but Apply is where the conflict is actually caught. What would
-NOT be acceptable: B's toggles turning on with no signal at all, Apply
-silently succeeding with both testbeds now claiming the same ports, or
-Testbed A's live run breaking/disappearing as a side effect of B's
-attempt.
+proceed but Start/Continue is where the conflict is actually caught. What
+would NOT be acceptable: B's toggles turning on with no signal at all,
+Start/Continue silently succeeding with both testbeds now claiming the
+same ports, or Testbed A's live run breaking/disappearing as a side
+effect of B's attempt.
 
-This mirrors the two-testbed sibling's builder/starter helpers
-(_reserve_ports / _release_ports / _delete_testbed_if_present /
-_build_and_apply_testbed / _start_testbed) rather than reinventing them —
-see that file's docstring for the concurrency-timing rationale behind
-building+Applying before Starting, and for the CSS-position selector
-caveats shared by every wizard step in this suite.
+This mirrors the two-testbed sibling's builder helpers (_reserve_ports /
+_release_ports / _delete_testbed_if_present / _build_and_start_testbed)
+rather than reinventing them — see that file's docstring for the
+CSS-position selector caveats shared by every wizard step in this suite.
+(That sibling file's own helper is still named `_build_and_apply_testbed`
+with a separate `_start_testbed` step, predating the 2026-09-17 UI change
+described below — this file's local helper has been renamed/merged to
+match the new single-action flow; see `_build_and_start_testbed`'s own
+docstring for why.)
 
 Stateful: generates real traffic on shared hardware. Never run alongside
 other T10/T12 lifecycle tests (no xdist, no parallel stateful runs, per
 CLAUDE.md).
 
---- What was actually observed (2026-09-15, one run against 192.168.173.111) ---
+=== UI CHANGE (2026-09-17) ===
+The "What was actually observed" section right below predates a product
+UI change: the draft testbed's "Apply" (save & activate) button no longer
+exists, and its "Deactivate" bar no longer appears as an intermediate
+armed-but-not-started state. A draft's bottom bar now reads Discard
+Changes / Delete / Save / Start, and Start pops a "Testbed is Inactive"
+confirmation modal (Continue) that activates AND starts traffic together,
+landing straight in the Statistics view — see
+test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the full
+writeup. The code below has been updated to use Start+Continue and to
+check for the Statistics heading instead of a "Deactivate" bar, but the
+specific finding recorded below (Testbed B's activation attempt failing
+silently, with no visible error) has NOT been re-confirmed against
+hardware since that change — NEEDS HUMAN REVIEW on the next live run to
+check whether Testbed B's Start+Continue attempt still fails the same
+silent way, or surfaces differently now (e.g. an error after Continue,
+or the modal itself refusing to open).
+
+--- What was actually observed under the OLD Apply/Deactivate flow
+(2026-09-15, one run against 192.168.173.111) — kept as historical record;
+"Apply" and "Deactivate" below no longer exist in the current UI ---
 Testbed A (UDP, Port 3+4, 1 Gbps, 10/180/10s ramp) built, Applied, and
 Started cleanly — confirmed live (Stop visible on its tile) before any
 conflict probing began.
@@ -212,7 +235,7 @@ def _reserve_ports(page: Page, ports):
         expect(row.get_by_text("Reserved", exact=True)).to_be_visible(timeout=10000)
 
 
-def _build_and_apply_testbed(
+def _build_and_start_testbed(
     page: Page,
     *,
     name: str,
@@ -223,11 +246,27 @@ def _build_and_apply_testbed(
     frame_size: int,
     ramp,
 ):
-    """Build a UDP Traffic Engine testbed through the wizard and Apply
-    (activate) it. Adapted from test_t10_two_testbeds_simultaneous.py's
-    helper of the same name — trimmed to just the UDP path (the only
-    protocol this test needs) since Testbed A here doesn't need protocol
-    parameterization.
+    """Build a UDP Traffic Engine testbed through the wizard, then Start it
+    (activate + begin traffic together — see module-level UI CHANGE note
+    below). Adapted from test_t10_two_testbeds_simultaneous.py's
+    `_build_and_apply_testbed` helper — trimmed to just the UDP path (the
+    only protocol this test needs) since Testbed A here doesn't need
+    protocol parameterization.
+
+    UI change (2026-09-17): this used to just click "Apply" (arm the
+    testbed) and stop there, leaving a separate `_start_testbed()` helper
+    to click the dashboard tile's own "Start" button once the caller
+    wanted traffic to actually begin — useful for controlling the exact
+    moment two testbeds' traffic starts relative to each other. That
+    two-step arm-then-start split no longer exists: "Apply" is gone, and a
+    draft testbed's "Start" button now activates AND starts traffic
+    together in one action (via a "Testbed is Inactive" confirmation
+    modal's Continue button), landing straight in the Statistics view. So
+    this helper now does the whole build-through-live-traffic sequence
+    itself in one call; the old separate `_start_testbed()` helper (which
+    just clicked an already-armed testbed's dashboard-tile "Start" button)
+    has been removed as dead code — this file never restarts an
+    already-active testbed, so it never needed that path.
     """
     page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
     _buffer(page)
@@ -309,21 +348,22 @@ def _build_and_apply_testbed(
     _buffer(page)
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
-    page.get_by_role("button", name="Apply", exact=True).click()
+    page.get_by_role("button", name="Start", exact=True).click()
     _buffer(page)
+    continue_btn = page.get_by_role("button", name="Continue", exact=True)
+    if continue_btn.is_visible():
+        continue_btn.click()
 
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
+    # Activation + traffic start together carry the same `?wait=15`
+    # server-side contract the old two-step Apply-then-Start flow did, so
+    # give it the same real room rather than treating slow-but-working as
+    # a failure.
+    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+        timeout=75000
+    )
 
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()
-
-
-def _start_testbed(page: Page, name: str):
-    """Click Start on an already-Applied testbed's dashboard tile — same
-    as the two-testbed sibling's helper.
-    """
-    _testbed_tile(page, name).get_by_role("button", name="Start").click()
-    _buffer(page)
 
 
 @pytest.mark.stateful
@@ -340,12 +380,12 @@ def test_t10_port_conflict_while_active(dashboard: Page, clean_testbeds):
         f"test touches it. Actual row text: {port3_baseline_text!r}"
     )
 
-    # --- Build, Apply, and Start Testbed A on Port 3+4 — real, live traffic ---
+    # --- Build and Start Testbed A on Port 3+4 — real, live traffic ---
     # A generous 10/180/10s ramp gives plenty of time to run the conflict
     # probe below against a genuinely still-live testbed, without racing
     # A's own natural finish.
     _reserve_ports(page, PORTS)
-    _build_and_apply_testbed(
+    _build_and_start_testbed(
         page,
         name=TESTBED_A_NAME,
         ports=PORTS,
@@ -355,7 +395,6 @@ def test_t10_port_conflict_while_active(dashboard: Page, clean_testbeds):
         frame_size=1000,
         ramp=(10, 180, 10),
     )
-    _start_testbed(page, TESTBED_A_NAME)
     tile_a = _testbed_tile(page, TESTBED_A_NAME)
     expect(tile_a.get_by_role("button", name="Stop")).to_be_visible(timeout=15000)
 
@@ -482,17 +521,49 @@ def test_t10_port_conflict_while_active(dashboard: Page, clean_testbeds):
 
         page.get_by_role("button", name="4 Traffic and Load Profile").click()
         _buffer(page)
-        page.get_by_role("button", name="Apply", exact=True).click()
+        # UI change (2026-09-17): "Apply" is gone; a draft's bar now reads
+        # Discard Changes / Delete / Save / Start, and Start pops a
+        # "Testbed is Inactive" confirmation modal (Continue) before
+        # activating. The modal itself is generic UI — it doesn't validate
+        # the config — so it's expected to appear here regardless of the
+        # port conflict; the actual crux question (does the product let a
+        # second testbed claim in-use ports?) is now decided by what
+        # happens after Continue, not by whether the modal shows up.
+        page.get_by_role("button", name="Start", exact=True).click()
+        _buffer(page)
+        continue_btn = page.get_by_role("button", name="Continue", exact=True)
+        if continue_btn.is_visible():
+            continue_btn.click()
         _buffer(page)
 
         # Give this real room, same as a normal activate — but this is the
-        # crux check: did Apply silently let live ports get double-claimed?
+        # crux check: did Start+Continue silently let live ports get
+        # double-claimed?
         b_activated = False
         try:
-            expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=30000)
+            expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+                timeout=30000
+            )
             b_activated = True
         except Exception:
             pass
+
+        if not b_activated:
+            # Activation didn't go through — capture whatever's visible
+            # (error toast, or the confirmation modal still lingering) for
+            # diagnostics, and dismiss the modal via Cancel if it's still
+            # open so the "← Dashboard" click below isn't blocked by it.
+            error_locator = page.get_by_text(
+                re.compile(r"cannot|can.t|not allowed|error|failed|conflict|in use", re.I)
+            )
+            error_texts = [
+                error_locator.nth(i).inner_text() for i in range(min(error_locator.count(), 5))
+            ]
+            print(f"[conflict probe] Error/warning-like text visible after failed Start+Continue: {error_texts!r}")
+            lingering_cancel = page.get_by_role("button", name="Cancel", exact=True)
+            if lingering_cancel.is_visible():
+                lingering_cancel.click()
+                _buffer(page)
 
         # Whatever happened to B, immediately re-check A wasn't corrupted.
         page.get_by_role("button", name="← Dashboard").click()
@@ -503,11 +574,11 @@ def test_t10_port_conflict_while_active(dashboard: Page, clean_testbeds):
         expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
 
         a_still_live = tile_a.get_by_role("button", name="Stop").is_visible()
-        print(f"[conflict probe] Testbed B reached an activated state on Apply: {b_activated}")
+        print(f"[conflict probe] Testbed B reached an activated (live Statistics) state on Start+Continue: {b_activated}")
         print(f"[conflict probe] Testbed A still shows Stop (live/unharmed) after B's attempt: {a_still_live}")
 
         assert not b_activated, (
-            f"BUG: Testbed {TESTBED_B_NAME} was allowed to Apply/activate "
+            f"BUG: Testbed {TESTBED_B_NAME} was allowed to activate+start "
             "with Port 3/4 selected while Testbed "
             f"{TESTBED_A_NAME} was actively, live using those same ports — "
             "the product silently let a second testbed claim in-use ports "

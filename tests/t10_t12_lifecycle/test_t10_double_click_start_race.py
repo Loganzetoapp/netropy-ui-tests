@@ -1,4 +1,5 @@
-"""T10 — double-click race on Start (and, budget permitting, on Apply).
+"""T10 — double-click race on Start (and, budget permitting, on a fresh
+draft's very first Start click).
 
 Last of a five-test exploratory batch hunting for real product bugs via
 untried state-transition combinations. The other four already found: (1) a
@@ -15,60 +16,75 @@ cause the run to silently self-terminate after only ~2-4s instead of its
 configured duration, with no error shown anywhere.
 
 This test asks a different but adjacent question: what happens if a user's
-mouse (or an impatient double-tap) sends the wizard's Start button *two*
-click events back to back, right after Apply has just armed the testbed?
-Single-click Start here is well-trodden ground (every other lifecycle test
-in this file uses it) — the untried part is the *double*-click, which
-touches the same state-transition territory as finding (4) above: does the
-frontend de-dupe it (second click is a no-op), does it fire a duplicate
-backend call, does it produce a duplicate run-history row for what should
-be one logical run, does it break navigation into the Statistics view, or —
-the one to watch for most closely given finding (4) — does it produce that
-same "silently ends after a few seconds" symptom? If that symptom shows up
-here too, the report below calls out explicitly whether it looks like the
-SAME underlying bug as (4) (a race in the same start/stop state machine) or
-something distinct (specific to double-submission of the click itself).
+mouse (or an impatient double-tap) sends a click-triggered control *two*
+click events back to back, right at the moment it's about to arm/start a
+testbed? Single-click Start (and single-click Continue on its confirmation
+modal) is well-trodden ground (every other lifecycle test in this file uses
+it) — the untried part is the *double*-click, which touches the same
+state-transition territory as finding (4) above: does the frontend de-dupe
+it (second click is a no-op), does it fire a duplicate backend call, does
+it produce a duplicate run-history row for what should be one logical run,
+does it break navigation into the Statistics view, or — the one to watch
+for most closely given finding (4) — does it produce that same "silently
+ends after a few seconds" symptom? If that symptom shows up here too, the
+report below calls out explicitly whether it looks like the SAME underlying
+bug as (4) (a race in the same start/stop state machine) or something
+distinct (specific to double-submission of the click itself).
 
-Phase 1 (always run): build one UDP testbed on Port 3 + Port 4 (10/60/10s
-ramp — generous, so a premature end is unambiguous against the 80s
-expected floor), Apply it, wait for the post-Apply "Deactivate" bar
-(armed, not started), then fire `Start.click(click_count=2)` — Playwright's
-literal double-click gesture, which dispatches two real `click` events at
-the DOM level in rapid succession, closer to an actual double-click race
-than two independently-actionability-checked `.click()` calls would be.
-Backend requests matching `/start` or `/activate` are captured via a
-`page.on("request")` listener across the click window as a direct,
-UI-independent signal of whether one or two calls actually went out.
-Console errors and uncaught page errors are captured the same way.
+=== UI CHANGE (2026-09-17) — this test's whole click sequence was rebuilt ===
+The two-step "Apply (Save & activate) -> wait for the post-Apply
+'Deactivate' bar -> Start (run traffic)" flow this test was originally
+written against no longer exists for a freshly-created draft testbed. The
+"Apply" button is gone entirely; the draft's bottom bar is now Discard
+Changes / Delete / Save / Start, and clicking Start pops a "Testbed is
+Inactive" confirmation modal (Cancel / Continue) that activates AND starts
+traffic together on Continue, landing straight in the Statistics view. See
+test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the fullest
+writeup of the product change itself.
 
-Phase 2 (only reached if Phase 1 found nothing — see the "stop, don't
-force a pass" rule below): after fully cleaning up Phase 1's testbed and
-releasing Port 3/4 back to Available, build a second, unapplied UDP
-testbed and double-click *Apply* itself the same way, watching for a
-duplicate save/activate call or a broken post-Apply bar. This is the
-"budget permitting" second angle from the task — cheap to attempt since it
-reuses the same ports and pattern, and worth checking since Apply is the
-one-time, novel-state-creating twin of the many-times-repeatable Start.
+That merger removes the old test's two distinct "kinds" of click target
+(Apply = one-time, novel-state-creating; Start = repeatable, traffic-only)
+that Phase 1 and Phase 2 below were built around. This version maps them
+onto the closest equivalents in the new flow:
 
-Stateful: generates real traffic on shared hardware. Only Port 3 and Port
-4 are touched (Port 1/2 belong to other real users right now; Port 5/6 has
-a known link-down hardware issue; Port 7/8 are unconfirmed) — same
-constraint as every other test in this exploratory batch. Never run
-alongside other stateful tests (no xdist, no parallel stateful runs, per
-CLAUDE.md).
+  - Phase 1 (was: double-click the repeatable "Start traffic" button on an
+    already-armed testbed) now double-clicks **Continue** on the
+    confirmation modal — Continue is the control that now actually fires
+    the backend activate+start call for a first-ever activation, so it's
+    the direct analog of the old test's "click the button that starts
+    traffic" step. The single Start click that pops the modal is treated
+    as the (single-click, well-trodden) arming step, matching the old
+    test's single-click Apply before its double-click Start.
+  - Phase 2 (was: double-click Apply itself, the one-time draft-arming
+    action, on a second fresh testbed) now double-clicks **Start** itself
+    on a second fresh draft, before any Continue click — Start's first-ever
+    click is now the one-time, novel-state-creating action (it's what
+    conjures the confirmation modal into existence), making it the closest
+    analog of old Apply.
 
-Selector/pattern notes carried over from the closest siblings
-(test_t10_t12_lifecycle_udp_1gbps_1500b.py, test_t10_rapid_stop_restart_cycle.py):
-several wizard controls have no accessible name/role/data-testid and fall
-back to CSS position (`.fc`, `.seg`, `nth-child`); the post-Apply action
-bar takes real time to swap in (`?wait=15` server-side contract), so the
-wait for "Deactivate" is given generous room (75s) rather than treated as
-hung; a hard `page.goto()`/back-nav mid-transition is known to crash this
-SPA's routing, so the app's own "← Dashboard" button is used to navigate
-back wherever possible.
+NEEDS HUMAN REVIEW: this mapping is a best-effort adaptation, not something
+re-confirmed against live hardware yet (the original 2026-09-15 findings
+below were captured under the OLD Apply/Start flow and are kept as
+historical record of a real bug found that day — they do not describe
+current button names or the current click sequence). Two assumptions in
+particular need verification on the next live run:
+  1. That a never-yet-activated draft testbed reliably shows the "Testbed
+     is Inactive" modal on its first Start click (if a prior manual session
+     left "Don't show this again" checked for this account, Phase 1 would
+     have no modal/Continue to double-click at all — handled below by
+     skipping loudly rather than silently reinterpreting the click target).
+  2. What double-clicking Start itself actually does in Phase 2 — whether
+     the second click event lands on the modal's own Continue by
+     coordinate coincidence (in which case it behaves like a fast
+     Start+Continue and ends up live), lands on the modal backdrop/no-op
+     (single clean modal, no different from a single click), or produces
+     some third, broken state. All three are handled and reported below,
+     but which one this product actually does is exactly the open question
+     this test exists to answer.
 
---- What was actually observed (2026-09-15, one run against
-192.168.173.111) ---
+--- What was actually observed under the OLD Apply/Start flow (2026-09-15,
+one run against 192.168.173.111) — kept as historical record; the button
+names below (Apply, Deactivate) no longer exist in the current UI ---
 Phase 1 ran; Phase 2 was never reached because Phase 1 surfaced a genuine
 anomaly and the test correctly stopped there (per the "don't force a
 pass" rule) rather than proceeding.
@@ -136,6 +152,29 @@ check after the test's own teardown fixture ran): Port 3 and Port 4 both
 back to "Available", and neither T10-DblClick nor T10-DblApply remain
 among the dashboard's testbed tiles (only the two pre-existing, unrelated
 testbeds TA and TE-01 are present).
+
+This whole test needs a fresh live run under the new UI before its
+"Verdict" section above can be trusted as still-current — it is retained
+only as historical evidence that double-submission bugs are a real,
+previously-demonstrated risk area in this product, which is why this test
+still exists and is worth re-running rather than deleting.
+
+Stateful: generates real traffic on shared hardware. Only Port 3 and Port
+4 are touched (Port 1/2 belong to other real users right now; Port 5/6 has
+a known link-down hardware issue; Port 7/8 are unconfirmed) — same
+constraint as every other test in this exploratory batch. Never run
+alongside other stateful tests (no xdist, no parallel stateful runs, per
+CLAUDE.md).
+
+Selector/pattern notes carried over from the closest siblings
+(test_t10_t12_lifecycle_udp_1gbps_1500b.py, test_t10_rapid_stop_restart_cycle.py):
+several wizard controls have no accessible name/role/data-testid and fall
+back to CSS position (`.fc`, `.seg`, `nth-child`); the post-Start/Continue
+navigation into the Statistics view takes real time to complete (`?wait=15`
+server-side contract), so waits for it are given generous room (75s)
+rather than treated as hung; a hard `page.goto()`/back-nav mid-transition
+is known to crash this SPA's routing, so the app's own "← Dashboard"
+button is used to navigate back wherever possible.
 """
 from __future__ import annotations
 
@@ -151,6 +190,10 @@ from conftest import assert_activatable_name
 # longer name but then 502s on activate (see netropy-ui-findings.md,
 # "Testbed activation 502s permanently").
 TESTBED_NAME = "T10-DblClick"
+# Used for Phase 2's fresh-draft double-click-on-Start probe (renamed in
+# spirit from its old "double-click Apply" role — see module docstring's
+# UI CHANGE section for the mapping rationale; kept the same constant name
+# to avoid an unrelated diff).
 APPLY_TESTBED_NAME = "T10-DblApply"
 assert_activatable_name(TESTBED_NAME)
 assert_activatable_name(APPLY_TESTBED_NAME)
@@ -197,7 +240,7 @@ def _release_ports(page: Page):
     if dashboard_btn.is_visible():
         dashboard_btn.click()
         _buffer(page)
-        # A failure mid-wizard (before Apply/Save) leaves unsaved edits, so
+        # A failure mid-wizard (before Save/Start) leaves unsaved edits, so
         # navigating away pops an "Unsaved changes" confirm modal.
         discard_btn = page.get_by_role("button", name="Discard", exact=True)
         if discard_btn.is_visible():
@@ -235,12 +278,14 @@ def _reserve_ports(page: Page):
         expect(row.get_by_text("Reserved", exact=True)).to_be_visible(timeout=10000)
 
 
-def _build_udp_testbed(page: Page, name: str, ip_base: str, *, apply: bool):
+def _build_udp_testbed(page: Page, name: str, ip_base: str):
     """Build a single-UDP-stream Traffic Engine testbed on Port 3 + Port 4,
-    1 Gbps line rate, 1500-byte frames, RAMP ramp. Optionally clicks Apply
-    at the end (Phase 2 needs to stop just short, so it can double-click
-    Apply itself). Mirrors test_t10_t12_lifecycle_udp_1gbps_1500b.py step
-    for step.
+    1 Gbps line rate, 1500-byte frames, RAMP ramp. Stops at the end of wizard
+    configuration WITHOUT clicking Start — both phases of this test need to
+    control that click themselves (single vs. double) as part of the probe
+    under test, so it isn't baked into this helper the way an ordinary
+    lifecycle test's Apply click used to be. Mirrors
+    test_t10_t12_lifecycle_udp_1gbps_1500b.py step for step otherwise.
     """
     page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
     _buffer(page)
@@ -326,10 +371,6 @@ def _build_udp_testbed(page: Page, name: str, ip_base: str, *, apply: bool):
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
 
-    if apply:
-        page.get_by_role("button", name="Apply", exact=True).click()
-        _buffer(page)
-
 
 def _run_history_rows(page: Page):
     return page.locator("table.runs-table tbody tr")
@@ -348,16 +389,35 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
     page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
     # =========================================================================
-    # Phase 1: build + Apply one UDP testbed, then double-click Start on the
-    # freshly-armed ("Deactivate" bar showing) testbed.
+    # Phase 1: build one UDP testbed, single-click Start to reach the
+    # "Testbed is Inactive" confirmation modal, then double-click Continue —
+    # the control that now actually fires the backend activate+start call
+    # (see module docstring's UI CHANGE section for why Continue, not Start,
+    # is this phase's target under the new merged flow).
     # =========================================================================
     _reserve_ports(page)
-    _build_udp_testbed(page, TESTBED_NAME, ip_base="10.0.9.", apply=True)
+    _build_udp_testbed(page, TESTBED_NAME, ip_base="10.0.9.")
 
-    # Post-Apply bar (Delete/Deactivate/Stats/Save/Start) — testbed is armed,
-    # not yet started. Real room given for the ?wait=15 activate contract
-    # plus UI lag, same as every other activating test in this suite.
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
+    start_btn = page.get_by_role("button", name="Start", exact=True)
+    expect(start_btn).to_be_visible()
+    start_btn.click()
+    _buffer(page)
+
+    continue_btn = page.get_by_role("button", name="Continue", exact=True)
+    # NEEDS HUMAN REVIEW: see module docstring assumption (1). If this ever
+    # fires, the account-level "Don't show this again" preference has
+    # apparently been left set from a prior manual session, and this
+    # phase's whole premise (double-click the button that fires the actual
+    # backend call) needs to be re-pointed at Start itself instead.
+    if not continue_btn.is_visible():
+        pytest.skip(
+            "The 'Testbed is Inactive' confirmation modal did not appear "
+            "after a single Start click on a never-yet-activated draft — "
+            "this test's assumption that Continue is the control that "
+            "fires the actual activate+start call does not hold here "
+            "(likely 'Don't show this again' is set for this account). "
+            "NEEDS HUMAN REVIEW before adapting this test further."
+        )
 
     # Drop any console/page-error noise accumulated during wizard navigation
     # — only the double-click window itself is the thing under test.
@@ -372,8 +432,6 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
 
     page.on("request", _capture_start_request)
 
-    start_btn = page.get_by_role("button", name="Start")
-    expect(start_btn).to_be_visible()
     url_before = page.url
 
     t0 = time.monotonic()
@@ -382,7 +440,7 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
     # without re-running actionability checks between them — the closest
     # thing to an actual impatient double-click race, closer than two
     # independently-actionability-checked .click() calls would be.
-    start_btn.click(click_count=2)
+    continue_btn.click(click_count=2)
     click_gesture_s = time.monotonic() - t0
 
     # Give the SPA a moment to settle wherever the double-click left it
@@ -390,39 +448,37 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
     page.wait_for_timeout(2000)
     page.remove_listener("request", _capture_start_request)
 
-    print(f"\n[dblclick probe] Start click(click_count=2) gesture took {click_gesture_s:.3f}s")
+    print(f"\n[dblclick probe] Continue click(click_count=2) gesture took {click_gesture_s:.3f}s")
     print(f"[dblclick probe] url before={url_before!r} url immediately after settle={page.url!r}")
     print(f"[dblclick probe] backend requests matching /start or /activate during the click window: {start_requests}")
     print(f"[dblclick probe] console errors during click window: {console_errors}")
     print(f"[dblclick probe] uncaught page errors during click window: {page_errors}")
 
     assert not page_errors, (
-        "BUG: double-clicking Start threw an uncaught page-level JS error — "
-        f"the double-submit crashed something client-side: {page_errors}"
+        "BUG: double-clicking Continue threw an uncaught page-level JS "
+        f"error — the double-submit crashed something client-side: {page_errors}"
     )
 
     # --- Did it land in the Statistics view cleanly, or somewhere broken? ---
-    # Single-click Start from this wizard-level bar navigates into the
-    # Statistics view (unlike the dashboard-tile Start used by
-    # test_t10_rapid_stop_restart_cycle.py, which stays on the dashboard).
-    stats_dashboard_btn = page.get_by_role("button", name="← Dashboard")
+    stats_heading = page.get_by_role("heading", name="Statistics", exact=False)
     landed_in_stats = False
     try:
-        expect(stats_dashboard_btn).to_be_visible(timeout=15000)
+        expect(stats_heading).to_be_visible(timeout=15000)
         landed_in_stats = True
     except Exception:
         body_preview = page.locator("body").inner_text()[:600]
-        print(f"[dblclick probe] NOT in Statistics view after double-click. Body preview: {body_preview!r}")
+        print(f"[dblclick probe] NOT in Statistics view after double-clicking Continue. Body preview: {body_preview!r}")
 
     assert landed_in_stats, (
-        "BUG: double-clicking Start did not land cleanly in the Statistics "
-        "view within 15s — the second click event appears to have broken "
-        "navigation (stuck mid-wizard, blank, or otherwise off the "
-        "expected post-Start route)."
+        "BUG: double-clicking Continue did not land cleanly in the "
+        "Statistics view within 15s — the second click event appears to "
+        "have broken navigation (stuck on the modal, blank, or otherwise "
+        "off the expected post-Continue route)."
     )
 
     # Get back to the dashboard the SPA-safe way (hard goto/back-nav is
     # known to crash mid-transition — see reference test docstring).
+    stats_dashboard_btn = page.get_by_role("button", name="← Dashboard")
     stats_dashboard_btn.click()
     expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
 
@@ -451,7 +507,7 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
           f"(configured ramp totals {RAMP_TOTAL_S}s)")
 
     assert stop_visible_for_s >= PREMATURE_END_THRESHOLD_S, (
-        f"BUG: after double-clicking Start, the run ended after only "
+        f"BUG: after double-clicking Continue, the run ended after only "
         f"{stop_visible_for_s:.1f}s — well short of the {RAMP_TOTAL_S}s "
         f"configured ramp and under the {PREMATURE_END_THRESHOLD_S}s "
         "premature-end threshold. This matches the shape of the known "
@@ -459,8 +515,8 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
         "run to silently self-terminate after ~2-4s "
         "(test_t10_rapid_stop_restart_cycle.py's discovery) — this may be "
         "the SAME underlying start/stop state-machine race, now reachable "
-        "via a double-click on the very first Start rather than a restart. "
-        "No error was shown anywhere in the UI for this early end."
+        "via a double-click on Continue rather than a restart. No error "
+        "was shown anywhere in the UI for this early end."
     )
 
     # --- Run-history integrity: exactly one row for what should be one
@@ -469,14 +525,14 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
     rows = _run_history_rows(page)
     expect(rows.first).to_be_visible(timeout=10000)
     row_count = rows.count()
-    print(f"[dblclick probe] run-history row count after one double-clicked Start: {row_count}")
+    print(f"[dblclick probe] run-history row count after one double-clicked Continue: {row_count}")
 
     assert row_count == 1, (
-        f"BUG: double-clicking Start produced {row_count} run-history rows "
-        "for what should be exactly one logical run — the second click "
-        "event appears to have triggered a duplicate activation/start "
-        f"attempt recorded as its own run. Backend requests captured "
-        f"during the click window: {start_requests}"
+        f"BUG: double-clicking Continue produced {row_count} run-history "
+        "rows for what should be exactly one logical run — the second "
+        "click event appears to have triggered a duplicate "
+        f"activation/start attempt recorded as its own run. Backend "
+        f"requests captured during the click window: {start_requests}"
     )
 
     result_text = rows.first.locator("td").last.inner_text().strip()
@@ -486,29 +542,33 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
     expect(page.get_by_text("Port Status")).to_be_visible()
 
     print(
-        "[dblclick probe] Phase 1 (double-click Start) verdict: no duplicate "
-        "backend call side effects, no duplicate run-history row, no "
-        "premature end, no broken navigation, no uncaught JS error — "
-        "double-click on Start appears to be handled as idempotent/robust "
-        "by this product."
+        "[dblclick probe] Phase 1 (double-click Continue) verdict: no "
+        "duplicate backend call side effects, no duplicate run-history "
+        "row, no premature end, no broken navigation, no uncaught JS "
+        "error — double-click on Continue appears to be handled as "
+        "idempotent/robust by this product."
     )
 
     # =========================================================================
     # Phase 2 (only reached if Phase 1 found nothing worth stopping for):
-    # fully clean up Phase 1's testbed, then double-click Apply itself on a
-    # fresh unapplied testbed, watching for a duplicate save/activate call.
+    # fully clean up Phase 1's testbed, then double-click Start itself — its
+    # first-ever click, before any Continue — on a fresh, unactivated draft.
+    # This is the analog of the old test's "double-click Apply" (the
+    # one-time, novel-state-creating action): Start's first click is what
+    # now conjures the confirmation modal into existence for a never-yet-
+    # activated testbed.
     # =========================================================================
     _release_ports(page)
     _delete_testbed_if_present(page, TESTBED_NAME)
 
     _reserve_ports(page)
-    _build_udp_testbed(page, APPLY_TESTBED_NAME, ip_base="10.0.10.", apply=False)
+    _build_udp_testbed(page, APPLY_TESTBED_NAME, ip_base="10.0.10.")
 
     apply_requests: list[tuple[str, str]] = []
 
     def _capture_apply_request(req):
         if req.method in ("POST", "PUT") and (
-            "/tests" in req.url or "/activate" in req.url
+            "/tests" in req.url or "/activate" in req.url or "/start" in req.url
         ):
             apply_requests.append((req.method, req.url))
 
@@ -516,41 +576,91 @@ def test_t10_double_click_start_race(dashboard: Page, clean_testbeds):
     console_errors.clear()
     page_errors.clear()
 
-    apply_btn = page.get_by_role("button", name="Apply", exact=True)
-    expect(apply_btn).to_be_visible()
-    apply_btn.click(click_count=2)
+    start_btn_2 = page.get_by_role("button", name="Start", exact=True)
+    expect(start_btn_2).to_be_visible()
+    start_btn_2.click(click_count=2)
 
-    # Same ?wait=15-plus-UI-lag contract as a normal single Apply.
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
     page.wait_for_timeout(2000)
     page.remove_listener("request", _capture_apply_request)
 
-    print(f"[dblclick probe] backend requests matching save/activate during the Apply "
-          f"double-click window: {apply_requests}")
-    print(f"[dblclick probe] console errors during Apply double-click: {console_errors}")
-    print(f"[dblclick probe] page errors during Apply double-click: {page_errors}")
+    print(f"[dblclick probe] backend requests matching save/activate/start during the "
+          f"fresh-draft Start double-click window: {apply_requests}")
+    print(f"[dblclick probe] console errors during Start double-click: {console_errors}")
+    print(f"[dblclick probe] page errors during Start double-click: {page_errors}")
 
     assert not page_errors, (
-        "BUG: double-clicking Apply threw an uncaught page-level JS error: "
-        f"{page_errors}"
+        "BUG: double-clicking a fresh draft's Start button threw an "
+        f"uncaught page-level JS error: {page_errors}"
     )
 
-    # A single, clean post-Apply bar (Deactivate visible exactly once —
-    # to_be_visible() above already confirms presence; here confirm there
-    # isn't a duplicated/broken second bar rendered alongside it).
-    deactivate_buttons = page.get_by_role("button", name="Deactivate")
-    assert deactivate_buttons.count() == 1, (
-        f"BUG: double-clicking Apply left {deactivate_buttons.count()} "
-        "'Deactivate' controls on screen instead of one — looks like a "
-        "duplicated/corrupted post-Apply action bar."
+    # NEEDS HUMAN REVIEW (see module docstring assumption (2)): a
+    # double-click on Start's very first click could plausibly resolve to
+    # any of three outcomes — (a) a single, clean confirmation modal still
+    # waiting for a real Continue click (second click event was a no-op,
+    # e.g. it hit the backdrop), (b) already live in the Statistics view
+    # (second click event happened to land on the modal's own Continue by
+    # coordinate coincidence, behaving like a fast single-click-through),
+    # or (c) neither — a broken, stuck state. All three are checked for
+    # explicitly below rather than assumed.
+    continue_btn_2 = page.get_by_role("button", name="Continue", exact=True)
+    stats_heading_2 = page.get_by_role("heading", name="Statistics", exact=False)
+    modal_open = continue_btn_2.is_visible()
+    in_statistics = stats_heading_2.is_visible()
+    print(f"[dblclick probe] After double-clicking a fresh draft's Start: "
+          f"modal_open={modal_open}, in_statistics={in_statistics}")
+
+    assert not (modal_open and in_statistics), (
+        "BUG: double-clicking Start left the UI showing BOTH the "
+        "confirmation modal AND the Statistics view's heading at once — a "
+        "confusing/inconsistent dual state."
+    )
+    assert modal_open or in_statistics, (
+        "BUG: double-clicking Start on a fresh, never-activated draft left "
+        "the UI in neither the confirmation modal NOR the Statistics view "
+        "— the second click event appears to have broken the "
+        "draft-to-active transition entirely (stuck mid-wizard, blank, or "
+        "otherwise unrecoverable without a manual reload)."
     )
 
-    print(
-        f"[dblclick probe] Phase 2 (double-click Apply) verdict: reached a single "
-        "clean post-Apply state, no uncaught JS error. Backend call count for "
-        f"manual review: {len(apply_requests)} request(s) captured "
-        f"({apply_requests})."
-    )
+    if modal_open:
+        continue_count = page.get_by_role("button", name="Continue", exact=True).count()
+        assert continue_count == 1, (
+            f"BUG: double-clicking Start left {continue_count} 'Continue' "
+            "controls on screen instead of one — looks like a duplicated "
+            "confirmation modal."
+        )
+        print(
+            "[dblclick probe] Phase 2 verdict: double-clicking a fresh "
+            "draft's Start button left a single, clean confirmation modal "
+            "— the second click event did not advance past it or "
+            "duplicate it. Dismissing without activating (Cancel), since "
+            "this probe's job is the click race itself, not a second live "
+            "traffic cycle."
+        )
+        cancel_btn = page.get_by_role("button", name="Cancel", exact=True)
+        if cancel_btn.is_visible():
+            cancel_btn.click()
+            _buffer(page)
+    else:
+        print(
+            "[dblclick probe] Phase 2 verdict: double-clicking a fresh "
+            "draft's Start button landed directly in the Statistics view "
+            "— NEEDS HUMAN REVIEW: confirm on a live run whether this "
+            "means the second click landed on the modal's own Continue "
+            "button by coordinate coincidence (benign — equivalent to a "
+            "fast manual Start+Continue), or whether the product now "
+            "silently skips confirmation on a double-click of Start (a "
+            "real product quirk worth flagging, since a single accidental "
+            "double-click would then activate+start traffic with no "
+            "chance to back out via Cancel)."
+        )
 
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
+    # Get back to the dashboard however the branch above left the page.
+    dash_btn_2 = page.get_by_role("button", name="← Dashboard")
+    if dash_btn_2.is_visible():
+        dash_btn_2.click()
+        _buffer(page)
+        discard_btn_2 = page.get_by_role("button", name="Discard", exact=True)
+        if discard_btn_2.is_visible():
+            discard_btn_2.click()
+    expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)

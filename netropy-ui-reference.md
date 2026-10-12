@@ -9,6 +9,42 @@ Compiled against the live box, chromium, logged in as `test`.
 
 ---
 
+## What changed in NTG 5.0 (5.0.7, mapped 2026-09-30 on 192.168.173.89)
+
+The rest of this file describes 4.0. Differences that matter for tests:
+
+- **Start replaces Activate.** Tiles and table rows show **Start / Stats /
+  Edit**. Start on an inactive testbed opens a confirm popup titled
+  **"Testbed is Inactive"** ("Start will activate *name* on the unit,
+  then run traffic…") with **Cancel / Continue** and a "Don't show this
+  again" checkbox (`localStorage['tgen-autoactivate-seen']`). Continue
+  deactivates any of your own idle testbeds holding the same ports,
+  activates, starts traffic, then jumps to Stats. Use
+  `conftest.start_testbed()` instead of clicking through this by hand.
+- **Activation Mode preference** (User menu → Preferences):
+  `localStorage['tgen-activate-mode']` = `auto` (default, above) or
+  `manual`, which brings back the 4.0 **Apply → Start** split.
+- **Editor bottom bar:** Discard Changes / Delete / Save / **Start**
+  (no Apply in auto mode). Start's gating is what Apply's was (needs
+  ports + ≥1 stream).
+- **Testbeds section defaults to Table view** (`tgen-tb-view`). The
+  `page` fixture pins `cards` so `.tb-tile` helpers keep working. The
+  list also loads after Port Status, so wait for "N saved · M active"
+  (the `dashboard` fixture does) before counting tiles.
+- **Network Configuration step defaults to Table view** — click the
+  `tab "▦ Cards"` to get `.ne-pcard` cards.
+- **Port Status** shows `Unreserved` (4.0: `Available`) and a per-port
+  Reset button; the wizard's Ports step shows `available` /
+  `⚠ reserved by you`. Ports 3 & 4 auto-peer when both are enabled.
+- **Removed:** the Load Profile **Iterations** field.
+- **Export JSON** now includes the testbed `uid`.
+- Licenses: SessionStrike is licensed on this unit; RFC 2544 is not.
+- Confirm dialogs (delete, start popup, clone) are plain divs with no
+  `role="dialog"`, `aria-modal` or focus trap; card icon buttons
+  (export/clone/delete) still have no accessible name.
+
+---
+
 ## Top bar
 
 Present on every screen.

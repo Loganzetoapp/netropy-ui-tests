@@ -352,13 +352,28 @@ def test_t10_clone_while_active(dashboard: Page, clean_testbed):
     _buffer(page)
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
-    page.get_by_role("button", name="Apply", exact=True).click()
+    # UI update (2026-09-17): the wizard's save-and-activate button for a
+    # freshly-created draft testbed was renamed from "Apply" to "Start" —
+    # the old two-step Apply ("Save & activate") -> Start ("run traffic")
+    # flow is gone, replaced by a single "Start" that does both. Clicking
+    # it pops a "Testbed is Inactive" confirmation modal ("Continue" to
+    # proceed) before it activates and starts traffic together. See
+    # test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the
+    # original writeup.
+    page.get_by_role("button", name="Start", exact=True).click()
     _buffer(page)
+    continue_btn = page.get_by_role("button", name="Continue", exact=True)
+    if continue_btn.is_visible():
+        continue_btn.click()
 
     # --- Activate / Start ---
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
-    page.get_by_role("button", name="Start").click()
-    page.wait_for_timeout(2000)
+    # Activation + traffic start together carry the same `?wait=15`
+    # server-side contract the old two-step flow did, so give it the same
+    # real room — this also doubles as the activation-succeeded check the
+    # old wait-for-Deactivate used to provide.
+    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+        timeout=75000
+    )
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()
 

@@ -36,7 +36,7 @@ SESSION_STORAGE_FILE = (
 def _first_available_port(page: Page) -> str:
     for n in range(1, 9):
         row = page.get_by_role("row", name=f"Port {n}")
-        if row.get_by_text("Available", exact=True).is_visible():
+        if row.get_by_text("Unreserved", exact=True).is_visible():
             return f"Port {n}"
     pytest.skip("No available port found — all 8 may be reserved by other users")
 
@@ -77,4 +77,4 @@ def test_t3_second_tab_same_account_sees_own_reservation_not_a_conflict(dashboar
         context_b.close()
 
     row_a.get_by_role("button", name="Release").click()
-    expect(row_a.get_by_text("Available", exact=True)).to_be_visible()
+    expect(row_a.get_by_text("Unreserved", exact=True)).to_be_visible()

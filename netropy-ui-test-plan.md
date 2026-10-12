@@ -146,6 +146,14 @@ Highest-value hardware-free area: the UI computes values live.
 ### T13 — Deferred: Connectivity Diagnostics
 Marked WORK IN PROGRESS in the UI. Only test now: DHCP Pre-Acq renders as not supported/disabled. Revisit when the feature stabilizes. ARP/Ping/Traceroute are live network actions — they belong in an integration tier, not the UI suite.
 
+### T14 — 64-byte frames across protocols / unit bad state (Class B) — P0
+Added 2026-10-01 from Joe's 2026-09-30 email: on the 5.0 build, TCP and HTTP streams with 64-byte frames put the system in a bad state; UDP at 64 bytes is fine. Asked for: TCs covering a variety of protocols at 64 bytes, and system failures marked separately in reports.
+- One case per protocol at 64 B on Port 3 ⇄ Port 4, 500 Mbps: UDP (control) → ICMP → ARP → DNS → UDP/IPv6 → TCP/IPv6 → TCP → HTTP, then a UDP 1500 B canary that always runs
+- Unit health checked before and after each run, from the UI only: top bar "online" (not offline / controller offline / RECOVERY), no "disconnected" testbed, run actually saved
+- An unhealthy unit raises `SystemBadStateError` → shown as **system failure** in junit (`failure_kind=system`), run history and the dashboard, separate from an ordinary FAIL
+- After the first system failure the remaining cases skip with that reason; the canary still runs to show whether the unit recovered
+- TCP/HTTP are expected to fail until the bug is fixed and are deliberately not xfail-ed. Recovery after a bad state may need a manual reboot — never run without the user asking, and expect the unit to be unusable afterwards
+
 ---
 
 ## 3. Rollout phases

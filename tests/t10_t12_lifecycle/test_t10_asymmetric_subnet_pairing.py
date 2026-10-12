@@ -230,24 +230,36 @@ def test_t10_asymmetric_subnet_pairing(dashboard: Page, clean_testbed):
     _buffer(page)
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
-    page.get_by_role("button", name="Apply", exact=True).click()
+    # UI update (2026-09-17): the wizard's save-and-activate button for a
+    # freshly-created draft testbed was renamed from "Apply" to "Start" —
+    # the old two-step Apply ("Save & activate") -> Start ("run traffic")
+    # flow is gone, replaced by a single "Start" that does both. Clicking
+    # it pops a "Testbed is Inactive" confirmation modal ("Continue" to
+    # proceed) before it activates and starts traffic together. See
+    # test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the
+    # original writeup.
+    page.get_by_role("button", name="Start", exact=True).click()
     _buffer(page)
+    continue_btn = page.get_by_role("button", name="Continue", exact=True)
+    if continue_btn.is_visible():
+        continue_btn.click()
 
     # --- Activate / start traffic ---
     # If the mismatched masks are going to cause a hard failure, this is
-    # the first place it could show up (silently stuck on Apply forever,
-    # per the known 502/name-length bug's symptom shape — ruled out here
-    # since the name is short, but the UI-visible failure mode would look
-    # the same for any other backend rejection). Give activation real room
-    # — confirmed elsewhere that slow-but-working can look hung well past
-    # 30s.
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
-    page.get_by_role("button", name="Start").click()
+    # the first place it could show up (silently stuck before ever reaching
+    # the Statistics view, per the known 502/name-length bug's symptom
+    # shape — ruled out here since the name is short, but the UI-visible
+    # failure mode would look the same for any other backend rejection).
+    # Activation + traffic start together carry the same `?wait=15`
+    # server-side contract the old two-step flow did, so give it the same
+    # real room rather than treating slow-but-working as a failure.
+    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+        timeout=75000
+    )
 
-    # Clicking Start navigates into the Statistics view. Use the SPA's own
-    # "← Dashboard" button rather than a hard nav — a forced reload mid
-    # in-flight request has failed this suite before.
-    page.wait_for_timeout(2000)
+    # Clicking Start (and Continue) navigates into the Statistics view. Use
+    # the SPA's own "← Dashboard" button rather than a hard nav — a forced
+    # reload mid in-flight request has failed this suite before.
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()
 

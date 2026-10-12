@@ -1,8 +1,15 @@
-"""T7 — Deleting all streams flags the step invalid; Activate/Apply disabled.
+"""T7 — Deleting all streams flags the step invalid; Activate/Start disabled.
 
 Confirmed by exploration: with 0 streams, the step's hint reads
 "traffic flows — at least one is required to activate · 0 streams" and
-the Apply button is disabled.
+the Start button is disabled.
+
+UI update (2026-09-17): the wizard's save-and-activate button for a draft
+testbed was renamed from "Apply" to "Start" (see project bugs memory) —
+updated the selector here to match. Still hardware_free: the button is
+only ever checked for its disabled state, never clicked, so the new
+"Testbed is Inactive" confirmation modal that now appears after an actual
+Start click never enters into this test.
 """
 import pytest
 from playwright.sync_api import Page, expect
@@ -83,7 +90,9 @@ def test_t7_deleting_all_streams_disables_apply(dashboard: Page, clean_up):
     page = dashboard
     _create_and_open_streams(page)
     rows = _stream_rows(page)
-    apply_btn = page.get_by_role("button", name="Apply", exact=True)
+    # NTG 5.0 renamed the editor's "Apply" (save + activate) to "Start"
+    # (save + activate + run traffic). Same gating: needs >= 1 stream.
+    apply_btn = page.get_by_role("button", name="Start", exact=True)
 
     expect(_streams_hint(page)).to_contain_text("0 streams")
     expect(apply_btn).to_be_disabled()

@@ -401,28 +401,18 @@ def test_t10_unrelated_action_during_live_run(dashboard: Page, clean_testbeds):
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
 
-    # --- Commit the config. On this box's current UI a brand-new draft's
-    # action bar reads "Save" + "Start" directly (no separate "Apply" that
-    # swaps to "Deactivate") — differs from what this file's siblings
-    # (edit/clone-while-active, the UDP reference test) documented earlier
-    # today, confirmed by direct inspection (screenshot) before adjusting
-    # this rather than guessing. Handle either label for resilience.
-    apply_btn = page.get_by_role("button", name="Apply", exact=True)
+    # --- Commit the config. A brand-new draft's action bar reads "Save" +
+    # "Start" directly (no separate "Apply" that swaps to "Deactivate") —
+    # confirmed by direct inspection (screenshot) before adjusting this
+    # rather than guessing, and since reconfirmed suite-wide as the
+    # product's current UI: "Apply" no longer exists at all for a draft
+    # testbed (see test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py
+    # for the full writeup). No fallback needed here.
     save_btn = page.get_by_role("button", name="Save", exact=True)
-    if apply_btn.count() > 0 and apply_btn.is_visible():
-        apply_btn.click()
-        commit_label = "Apply"
-    elif save_btn.count() > 0 and save_btn.is_visible():
-        save_btn.click()
-        commit_label = "Save"
-    else:
-        raise AssertionError(
-            "Neither an 'Apply' nor a 'Save' button is visible on the "
-            "wizard's action bar after filling in all 4 steps — can't "
-            "commit T10-LiveCtrl's config."
-        )
+    expect(save_btn).to_be_visible(timeout=10000)
+    save_btn.click()
     _buffer(page)
-    print(f"[build] Committed T10-LiveCtrl's config via {commit_label!r} button")
+    print("[build] Committed T10-LiveCtrl's config via the 'Save' button")
 
     # --- Activate / Start ---
     start_btn = page.get_by_role("button", name="Start", exact=True)
@@ -436,7 +426,7 @@ def test_t10_unrelated_action_during_live_run(dashboard: Page, clean_testbeds):
     # this: earlier dry runs of this test (see docstring's process note)
     # left the testbed permanently INACTIVE because nothing ever dismissed
     # it. Handle it if it appears; it may not (e.g. already dismissed for
-    # this account).
+    # this account, or on a later Start on an already-active testbed).
     continue_btn = page.get_by_role("button", name="Continue", exact=True)
     try:
         continue_btn.click(timeout=5000)
@@ -444,17 +434,18 @@ def test_t10_unrelated_action_during_live_run(dashboard: Page, clean_testbeds):
     except Exception:
         print("[build] No Start confirmation dialog appeared")
     # Start's tooltip reads "Save, activate and run traffic" — a
-    # save+activate+start round trip, not instant. An exact, case-matched
-    # wait on the header's "INACTIVE" badge (get_by_text matches raw DOM
-    # text, not the CSS text-transform: uppercase actually rendering it)
-    # silently never matched anything and made an earlier dry run of this
-    # test navigate away before activation had truly finished (see
-    # docstring's process note) — the investigation script that caught
-    # this observed the real transition landing consistently within
-    # ~20s of dismissing the dialog. Give it real margin here, then let
-    # the dashboard-tile check below (its own generous, role-based wait)
-    # be the actual confirmation activation succeeded.
-    page.wait_for_timeout(20000)
+    # save+activate+start round trip, not instant, carrying the same
+    # `?wait=15` server-side contract documented in the other lifecycle
+    # tests. Rather than an arbitrary fixed sleep, wait on the concrete
+    # signal that activation-and-start actually landed: Start now
+    # navigates straight into the live run's Statistics view (heading
+    # reads "Statistics — <name> · UID: ...") once the round trip
+    # completes — the same case-sensitivity trap this docstring's process
+    # note already found with the "INACTIVE" badge text doesn't apply
+    # here since this is a role-based heading match, not a raw-text one.
+    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+        timeout=75000
+    )
     _goto_dashboard(page)
 
     live_tile = _tile(page, LIVE_NAME)

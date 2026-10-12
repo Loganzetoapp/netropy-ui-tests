@@ -36,73 +36,45 @@ Stateful: generates real traffic on the box.
 Selector note: same caveats as every sibling — several wizard controls
 have no accessible name/role/data-testid and fall back to CSS position
 (`.fc`, `.seg`, `nth-child`).
+
+NTG 5.0 rewrite (2026-09-30): the 4.0 flow this was recorded against
+(manual Reserve, "Available" port status, Apply -> Deactivate -> Start,
+CSS-position selectors into the Network cards) no longer exists. The test
+now drives the same configuration through the shared role-based helpers
+in conftest.py and starts via Start -> "Testbed is Inactive" -> Continue,
+which reserves and activates the ports itself. Selector caveats above
+about `.fc`/`.seg`/`nth-child` no longer apply.
 """
-import re
-
 import pytest
-from playwright.sync_api import Page, expect
+from playwright.sync_api import Page
 
-from conftest import assert_activatable_name
+from conftest import (
+    add_stream,
+    assert_activatable_name,
+    create_testbed,
+    enable_ports,
+    open_editor,
+    remove_testbed,
+    assert_run_passed,
+    set_addressing,
+    set_all_frame_sizes,
+    set_ramp,
+    start_testbed,
+    wait_for_run_to_finish,
+)
 
 # Testbed name must stay <= 15 chars: the backend can create and save a
 # longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 TESTBED_NAME = "T10-Life-VXLAN"
 assert_activatable_name(TESTBED_NAME)
 PORTS = ["Port 1", "Port 2"]
-# This app's own UI needs a short settling moment after several wizard
-# actions (toggles, selects) or the next locator's actionability wait can
-# time out — see feedback_codegen_replay_reliability memory. expect()
-# assertions are used for the actual correctness checks; this is purely a
-# settle buffer.
-BUFFER_MS = 400
-
-
-def _buffer(page: Page):
-    page.wait_for_timeout(BUFFER_MS)
-
-
-def _testbed_tile(page: Page):
-    return page.locator(".tb-tile").filter(has_text=TESTBED_NAME)
-
-
-def _delete_testbed_if_present(page: Page):
-    tile = _testbed_tile(page)
-    if tile.count() > 0:
-        tile.locator("button").nth(2).click()
-        confirm = page.get_by_role("button", name="Delete", exact=True)
-        if confirm.is_visible():
-            confirm.click()
-        expect(_testbed_tile(page)).to_have_count(0, timeout=10000)
-
-
-def _release_ports(page: Page):
-    dashboard_btn = page.get_by_role("button", name="← Dashboard")
-    if dashboard_btn.is_visible():
-        dashboard_btn.click()
-        _buffer(page)
-        discard_btn = page.get_by_role("button", name="Discard", exact=True)
-        if discard_btn.is_visible():
-            discard_btn.click()
-    else:
-        page.goto("/")
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        release_btn = row.get_by_role("button", name="Release")
-        if release_btn.is_visible():
-            release_btn.click()
-            confirm = page.get_by_role("button", name="Deactivate & release")
-            if confirm.is_visible():
-                confirm.click()
-            expect(row.get_by_text("Available", exact=True)).to_be_visible(timeout=10000)
 
 
 @pytest.fixture
 def clean_testbed(dashboard: Page):
-    _delete_testbed_if_present(dashboard)
+    remove_testbed(dashboard, TESTBED_NAME)
     yield
-    _release_ports(dashboard)
-    _delete_testbed_if_present(dashboard)
+    remove_testbed(dashboard, TESTBED_NAME)
 
 
 @pytest.mark.stateful
@@ -132,124 +104,16 @@ def clean_testbed(dashboard: Page):
 )
 def test_t10_t12_lifecycle_vxlan_4gbps_1500b(dashboard: Page, clean_testbed):
     page = dashboard
+    create_testbed(page, TESTBED_NAME)
+    open_editor(page, TESTBED_NAME)
 
-    # --- Reserve Port 1 and Port 2 ---
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        expect(row.get_by_text("Available", exact=True)).to_be_visible()
-        row.get_by_role("button", name="Reserve").click()
-        _buffer(page)
-        expect(row.get_by_text("Reserved", exact=True)).to_be_visible(timeout=10000)
+    enable_ports(page, PORTS, rate="4", unit="Gbps")
+    set_addressing(page, (1, 2), ("10.0.9.1", "10.0.9.2"), cidr=27)
+    add_stream(page, "VXLAN")
+    set_all_frame_sizes(page, 1500)
+    set_ramp(page, up=7, hold=40, down=7)
 
-    # --- Create testbed ---
-    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
-    _buffer(page)
-    page.get_by_role("button", name="Traffic Engine").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="e.g. web-perf-").fill(TESTBED_NAME)
-    _buffer(page)
-    page.get_by_role("button", name="Create draft").click()
-    _buffer(page)
+    start_testbed(page)
+    run = wait_for_run_to_finish(page, timeout=54 * 1000 + 3 * 60_000)
 
-    # --- Wizard step 1: Ports — enable Port 1 & Port 2, 4 Gbps line rate ---
-    _testbed_tile(page).get_by_role("button", name="Edit").click()
-    _buffer(page)
-    page.locator("tr:nth-child(1) > td > div > .toggle > .track").click()
-    _buffer(page)
-    page.locator("tr:nth-child(2) > td > div > .toggle > .track").click()
-    _buffer(page)
-    for port_label in PORTS:
-        rate_field = page.get_by_role(
-            "row", name=re.compile(rf"^{re.escape(port_label)}\b")
-        ).get_by_placeholder("line rate")
-        rate_field.fill("4")
-        _buffer(page)
-    page.get_by_role(
-        "row", name=re.compile(r"^Port 2\b")
-    ).get_by_placeholder("line rate").press("Enter")
-    _buffer(page)
-
-    # --- Wizard step 2: Network Configuration ---
-    page.get_by_role("button", name="2 Network Configuration per-").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="10.1.0.10").first.fill("10.0.9.1")
-    _buffer(page)
-    page.locator(".seg").first.select_option("27")
-    _buffer(page)
-    page.get_by_role("textbox", name="10.1.0.10").nth(1).fill("10.0.9.2")
-    _buffer(page)
-    page.locator(
-        "div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main "
-        "> div > div:nth-child(2) > .ne-combo > select"
-    ).select_option("27")
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").nth(2).fill("10.0.9.1")
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").first.fill("10.0.9.2")
-    _buffer(page)
-
-    # --- Wizard step 3: Streams — VXLAN, 1500-byte frames ---
-    # VXLAN isn't the picker's default-highlighted protocol (UDP is), so
-    # it has to be selected explicitly, same as every non-UDP sibling.
-    page.get_by_role("button", name="3 Streams traffic flows — at").click()
-    _buffer(page)
-    page.get_by_role("button", name="✚ Add Stream").click()
-    _buffer(page)
-    page.get_by_role("button", name="VXLAN", exact=True).click()
-    _buffer(page)
-    add_stream_btn = page.get_by_role("button", name="Add stream", exact=True)
-    if add_stream_btn.is_visible():
-        add_stream_btn.click()
-        _buffer(page)
-
-    expect(page.get_by_role("button", name="VXLAN Edit VXLAN").first).to_be_visible()
-    frame_size = page.locator("td:nth-child(5) > .fc").first
-    frame_size.fill("1500")
-    _buffer(page)
-    frame_size.press("Enter")
-    _buffer(page)
-
-    # --- Wizard step 4: Traffic and Load Profile ---
-    # 7/40/7 = 54s ramp — distinct from every other sibling's ramp.
-    page.get_by_role("button", name="4 Traffic and Load Profile").click()
-    _buffer(page)
-    page.locator("div:nth-child(2) > div > .toggle > .track").click()
-    _buffer(page)
-    ramp_input = page.locator(".fc > input").first
-    if ramp_input.count() == 0 or not ramp_input.is_visible():
-        page.locator("div:nth-child(2) > div > .toggle > .track").click()
-        _buffer(page)
-    page.locator(".fc > input").first.fill("7")
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").fill("40")
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").press("Enter")
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").fill("7")
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").press("Enter")
-    _buffer(page)
-    page.get_by_role("button", name="Apply", exact=True).click()
-    _buffer(page)
-
-    # --- Activate / start traffic ---
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
-    page.get_by_role("button", name="Start").click()
-
-    page.wait_for_timeout(2000)
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
-
-    # --- Wait for the run to finish naturally — never race ahead of it ---
-    tile = _testbed_tile(page)
-    expect(tile.get_by_role("button", name="Stop")).to_be_visible(timeout=15000)
-    expect(tile.get_by_role("button", name="Stop")).to_have_count(0, timeout=5 * 60 * 1000)
-
-    # --- Verify PASS before touching Deactivate/Release ---
-    # "Reports: N" only appears once the testbed is deactivated (see project
-    # bugs memory, 2026-08-28) — at this point it's still active, so the
-    # same run-history page is reached via "Stats" instead.
-    tile.get_by_role("button", name="Stats").click()
-    expect(page.get_by_text("pass", exact=True)).to_be_visible(timeout=10000)
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
+    assert_run_passed(run)

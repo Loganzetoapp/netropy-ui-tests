@@ -107,271 +107,85 @@ pass — a real product bug found here gets reported, not routed around.
 Stateful: generates real traffic on shared hardware, then interrupts it
 via a control path no other test in this suite has exercised.
 
-Selector note: same caveats as every other lifecycle test in this file —
-several wizard controls have no accessible name/role/data-testid and fall
-back to CSS position (`.fc`, `.seg`, `nth-child`). The per-port line-rate
-row lookup uses a start-anchored regex, matching the fix applied to the
-other lifecycle tests after a "UNIT" column was added to the wizard's
-Ports table.
+NTG 5.0 rewrite (2026-09-30): built with the shared conftest helpers and
+started via Start -> "Testbed is Inactive" -> Continue. In 5.0 the editor
+bar of an active testbed still has Deactivate; after it the bar offers
+Start (5.0 auto mode has no Apply). Ports read "Unreserved" (4.0
+"Available") once released, and the tile's Stats button reaches saved
+runs whether or not the testbed is active (4.0 needed "Reports: N").
 """
 import re
 
 import pytest
 from playwright.sync_api import Page, expect
 
-from conftest import assert_activatable_name
+from conftest import (
+    add_stream,
+    assert_activatable_name,
+    create_testbed,
+    enable_ports,
+    go_to_dashboard,
+    open_editor,
+    remove_testbed,
+    set_all_frame_sizes,
+    set_ramp,
+    start_testbed,
+    testbed_tile,
+    wait_for_run_to_finish,
+)
 
 # Testbed name must stay <= 15 chars: the backend can create and save a
 # longer name but then 502s on activate (see project-bugs-found, 2026-09-09).
 TESTBED_NAME = "T10-DeactLive"
 assert_activatable_name(TESTBED_NAME)
 PORTS = ["Port 3", "Port 4"]
-BUFFER_MS = 400
-
-
-def _buffer(page: Page):
-    page.wait_for_timeout(BUFFER_MS)
-
-
-def _testbed_tile(page: Page):
-    return page.locator(".tb-tile").filter(has_text=TESTBED_NAME)
-
-
-def _delete_testbed_if_present(page: Page):
-    tile = _testbed_tile(page)
-    if tile.count() > 0:
-        tile.locator("button").nth(2).click()
-        confirm = page.get_by_role("button", name="Delete", exact=True)
-        if confirm.is_visible():
-            confirm.click()
-        expect(_testbed_tile(page)).to_have_count(0, timeout=10000)
-
-
-def _release_ports(page: Page):
-    dashboard_btn = page.get_by_role("button", name="← Dashboard")
-    if dashboard_btn.is_visible():
-        dashboard_btn.click()
-        _buffer(page)
-        discard_btn = page.get_by_role("button", name="Discard", exact=True)
-        if discard_btn.is_visible():
-            discard_btn.click()
-    else:
-        page.goto("/")
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=20000)
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        release_btn = row.get_by_role("button", name="Release")
-        if release_btn.is_visible():
-            release_btn.click()
-            confirm = page.get_by_role("button", name="Deactivate & release")
-            if confirm.is_visible():
-                confirm.click()
-            expect(row.get_by_text("Available", exact=True)).to_be_visible(timeout=10000)
 
 
 @pytest.fixture
 def clean_testbed(dashboard: Page):
-    _delete_testbed_if_present(dashboard)
+    remove_testbed(dashboard, TESTBED_NAME)
     yield
-    _release_ports(dashboard)
-    _delete_testbed_if_present(dashboard)
+    remove_testbed(dashboard, TESTBED_NAME)
 
 
 @pytest.mark.stateful
 def test_t10_deactivate_mid_run_skips_stop_cleanly(dashboard: Page, clean_testbed):
     page = dashboard
+    create_testbed(page, TESTBED_NAME)
+    open_editor(page, TESTBED_NAME)
+    enable_ports(page, PORTS, rate="1", unit="Gbps")
+    add_stream(page, "UDP")
+    set_all_frame_sizes(page, 1500)
+    # 5/90/5 = 100s — Deactivate lands ~15s into an ~90s hold.
+    set_ramp(page, up=5, hold=90, down=5)
+    start_testbed(page)
 
-    # --- Reserve Port 3 and Port 4 ---
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        expect(row.get_by_text("Available", exact=True)).to_be_visible()
-        row.get_by_role("button", name="Reserve").click()
-        _buffer(page)
-        expect(row.get_by_text("Reserved", exact=True)).to_be_visible(timeout=10000)
+    go_to_dashboard(page)
+    tile = testbed_tile(page, TESTBED_NAME)
+    expect(tile.get_by_role("button", name="Stop", exact=True)).to_be_visible(timeout=15_000)
+    port3_live = page.get_by_role("row", name=re.compile(r"^Port 3\b")).inner_text()
+    print(f"[deactivate-mid-run] Port 3 dashboard row while live: {port3_live!r}")
+    page.wait_for_timeout(15_000)
 
-    # --- Create testbed ---
-    page.get_by_role("button", name="✚ Create Testbed", exact=True).click()
-    _buffer(page)
-    page.get_by_role("button", name="Traffic Engine").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="e.g. web-perf-").fill(TESTBED_NAME)
-    _buffer(page)
-    page.get_by_role("button", name="Create draft").click()
-    _buffer(page)
-
-    # --- Wizard step 1: Ports — enable Port 3 & Port 4, 1 Gbps line rate ---
-    _testbed_tile(page).get_by_role("button", name="Edit").click()
-    _buffer(page)
-    page.locator("tr:nth-child(3) > td > div > .toggle > .track").click()
-    _buffer(page)
-    page.locator("tr:nth-child(4) > td > div > .toggle > .track").click()
-    _buffer(page)
-    for port_label in PORTS:
-        rate_field = page.get_by_role(
-            "row", name=re.compile(rf"^{re.escape(port_label)}\b")
-        ).get_by_placeholder("line rate")
-        rate_field.fill("1")
-        _buffer(page)
-    page.get_by_role(
-        "row", name=re.compile(r"^Port 4\b")
-    ).get_by_placeholder("line rate").press("Enter")
-    _buffer(page)
-
-    # --- Wizard step 2: Network Configuration ---
-    page.get_by_role("button", name="2 Network Configuration per-").click()
-    _buffer(page)
-    page.get_by_role("textbox", name="10.1.0.10").first.fill("10.0.11.1")
-    _buffer(page)
-    page.locator(".seg").first.select_option("25")
-    _buffer(page)
-    page.get_by_role("textbox", name="10.1.0.10").nth(1).fill("10.0.11.2")
-    _buffer(page)
-    page.locator(
-        "div:nth-child(2) > div:nth-child(2) > .ne-src > .ne-src-main "
-        "> div > div:nth-child(2) > .ne-combo > select"
-    ).select_option("25")
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").nth(2).fill("10.0.11.1")
-    _buffer(page)
-    page.get_by_role("textbox", name="auto").first.fill("10.0.11.2")
-    _buffer(page)
-
-    # --- Wizard step 3: Streams — UDP (default), 1500-byte frames ---
-    page.get_by_role("button", name="3 Streams traffic flows — at").click()
-    _buffer(page)
-    page.get_by_role("button", name="✚ Add Stream").click()
-    _buffer(page)
-    add_stream_btn = page.get_by_role("button", name="Add stream", exact=True)
-    if add_stream_btn.is_visible():
-        add_stream_btn.click()
-        _buffer(page)
-
-    expect(page.get_by_role("button", name="UDP Edit UDP").first).to_be_visible()
-    frame_size = page.locator("td:nth-child(5) > .fc").first
-    frame_size.fill("1500")
-    _buffer(page)
-    frame_size.press("Enter")
-    _buffer(page)
-
-    # --- Wizard step 4: Traffic and Load Profile ---
-    # 5/90/5 = 100s — a deliberately long hold phase so Deactivate can be
-    # clicked solidly mid-run rather than racing natural completion.
-    page.get_by_role("button", name="4 Traffic and Load Profile").click()
-    _buffer(page)
-    page.locator("div:nth-child(2) > div > .toggle > .track").click()
-    _buffer(page)
-    ramp_input = page.locator(".fc > input").first
-    if ramp_input.count() == 0 or not ramp_input.is_visible():
-        page.locator("div:nth-child(2) > div > .toggle > .track").click()
-        _buffer(page)
-    page.locator(".fc > input").first.fill("5")
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").fill("90")
-    _buffer(page)
-    page.locator("div:nth-child(2) > .fc > input").press("Enter")
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").fill("5")
-    _buffer(page)
-    page.locator("div:nth-child(3) > .fc > input").press("Enter")
-    _buffer(page)
-    page.get_by_role("button", name="Apply", exact=True).click()
-    _buffer(page)
-
-    # --- Activate / start traffic ---
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
-    page.get_by_role("button", name="Start").click()
-    page.wait_for_timeout(2000)
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
-
-    # --- Confirm the run actually started before doing anything to it ---
-    tile = _testbed_tile(page)
-    expect(tile.get_by_role("button", name="Stop")).to_be_visible(timeout=15000)
-
-    # Snapshot Port 3's dashboard row while genuinely live, purely as
-    # exploratory documentation of what "in use" looks like here — not
-    # asserted against, since no prior test in this suite has looked at
-    # this row while a run is actively transmitting (only "Reserved"
-    # before activation and "Available" after release are established).
-    port3_row_live_text = page.get_by_role("row", name="Port 3").inner_text()
-    print(f"[deactivate-mid-run] Port 3 dashboard row while live: {port3_row_live_text!r}")
-
-    # ~15s into the hold phase (after the 5s ramp-up) — comfortably clear
-    # of both the ramp-up transient and the 100s natural-completion mark
-    # (~80s away here).
-    page.wait_for_timeout(15000)
-
-    # --- The whole point of this test: reach Deactivate directly, mid-run,
-    # without ever clicking Stop. Deactivate lives in the wizard/edit
-    # view's action bar, not on the dashboard tile itself, so click into
-    # Edit first — on an already-ACTIVE, currently-transmitting testbed,
-    # which no prior test has done (Edit was previously only ever clicked
-    # on a draft/inactive testbed).
+    # The point: Deactivate directly, mid-run, never touching Stop.
     tile.get_by_role("button", name="Edit").click()
-    _buffer(page)
+    deactivate = page.get_by_role("button", name="Deactivate", exact=True)
+    expect(deactivate).to_be_visible(timeout=15_000)
+    deactivate.click()
 
-    # Confirm this really is the live, post-Apply edit view (Deactivate
-    # button present) rather than some stale/reset draft state — and that
-    # Stop was never clicked to get here.
-    deactivate_btn = page.get_by_role("button", name="Deactivate", exact=True)
-    expect(deactivate_btn).to_be_visible(timeout=15000)
-    deactivate_btn.click()
+    # Ends the run and returns the testbed to inactive: Deactivate goes
+    # away and the bar offers Start again.
+    expect(deactivate).to_have_count(0, timeout=30_000)
+    expect(page.get_by_role("button", name="Start", exact=True)).to_be_visible(timeout=15_000)
 
-    # Unknown shape going in: does a bare Deactivate (mid-run, no prior
-    # Stop) take effect immediately, or — like the port Release flow's
-    # "Deactivate & release" — pop its own confirmation step first? Handle
-    # either without assuming.
-    _buffer(page)
-    confirm_deactivate = page.get_by_role("button", name="Deactivate", exact=True)
-    if confirm_deactivate.count() > 0 and confirm_deactivate.is_visible():
-        confirm_deactivate.click()
-        _buffer(page)
+    go_to_dashboard(page)
+    expect(tile.get_by_role("button", name="Stop", exact=True)).to_have_count(0)
+    # Deactivate also releases the ports (no separate Release needed).
+    for port in PORTS:
+        row = page.get_by_role("row", name=re.compile(rf"^{port}\b"))
+        expect(row.get_by_text("Unreserved", exact=True)).to_be_visible(timeout=10_000)
 
-    # --- Deactivate should end the run and return the testbed to an
-    # editable/inactive state: Deactivate itself disappears, and the
-    # draft-style action bar (with Apply) comes back. Generous timeout —
-    # this is a real backend state transition, same caveat as Apply's own
-    # documented slowness.
-    expect(page.get_by_role("button", name="Deactivate")).to_have_count(0, timeout=30000)
-    expect(page.get_by_role("button", name="Apply", exact=True)).to_be_visible(timeout=15000)
-
-    # --- Back to the dashboard: tile should no longer show Stop, and
-    # ports should land in some sane non-stuck state. CONFIRMED (two
-    # identical live runs, 2026-09-15): despite this test never touching
-    # the port row's own "Release" button — only the wizard's standalone
-    # Deactivate — both ports come back "Available", not "Reserved".
-    # Deactivate cascades into a full release here, unlike Stop (which
-    # leaves reservations intact; see every sibling lifecycle test's
-    # teardown, which always Releases separately after Stop). Documented
-    # in this file's docstring as a real, silent side effect worth
-    # knowing about — not a stuck/broken state, the opposite of one.
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible(timeout=10000)
-    expect(tile.get_by_role("button", name="Stop")).to_have_count(0)
-
-    for port_label in PORTS:
-        row = page.get_by_role("row", name=port_label)
-        expect(row.get_by_text("Available", exact=True)).to_be_visible(timeout=10000)
-
-    # --- Run history: was this run correctly recorded despite skipping
-    # Stop entirely? Once fully deactivated, "Reports: N" becomes the way
-    # in (per the existing "Reports: N only appears once deactivated"
-    # finding) — use that rather than "Stats", which is what active
-    # testbeds expose instead.
-    reports_btn = tile.get_by_role("button", name="Reports:", exact=False)
-    expect(reports_btn).to_be_visible(timeout=10000)
-    reports_btn.click()
-    run_row = page.locator("table.runs-table tbody tr").first
-    expect(run_row).to_be_visible(timeout=10000)
-    cells = run_row.locator("td")
-    expect(cells.nth(1)).not_to_have_text("")  # Started At
-    expect(cells.nth(2)).not_to_have_text("")  # Duration
-    result_text = cells.last.inner_text()
-    assert result_text.strip(), (
-        "expected the Result cell to show some recorded outcome for a run "
-        "ended via Deactivate mid-run (no prior Stop) — got an empty cell, "
-        "which would mean the run's result was lost by skipping Stop"
-    )
-
-    page.get_by_role("button", name="← Dashboard").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
+    # The run skipped Stop entirely — is it still recorded?
+    tile.get_by_role("button", name="Stats").click()
+    run = wait_for_run_to_finish(page, run_number=1, timeout=30_000)
+    expect(run.get_by_text(re.compile(r"^(pass|fail)$", re.I))).to_be_visible(timeout=15_000)

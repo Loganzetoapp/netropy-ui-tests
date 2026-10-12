@@ -93,4 +93,9 @@ def test_t4_export_then_import_recreates_equivalent_testbed(dashboard: Page, cle
     with open(reexported) as f:
         reexported_data = json.load(f)
     original_data = json.loads(exported)
+    # NTG 5.0 started including the UID in the export body; drop it from
+    # both sides, per the note above.
+    for data in (reexported_data, original_data):
+        data.pop("uid", None)
+        data.pop("testbed-uid", None)
     assert reexported_data == original_data

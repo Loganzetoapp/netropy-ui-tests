@@ -285,13 +285,27 @@ def test_t10_edit_config_while_active(dashboard: Page, clean_testbed):
     _buffer(page)
     page.locator("div:nth-child(3) > .fc > input").press("Enter")
     _buffer(page)
-    page.get_by_role("button", name="Apply", exact=True).click()
+    # --- Activate + start traffic together ---
+    # UI change (2026-09-17): the draft's "Apply" (save & activate) button
+    # is gone; the bar now reads Discard Changes / Delete / Save / Start,
+    # and Start pops a "Testbed is Inactive" confirmation modal (Continue)
+    # that activates AND starts traffic in one action, landing straight in
+    # the Statistics view — no more separate armed-but-not-started
+    # "Deactivate" state to wait on before Start. See
+    # test_t10_t12_lifecycle_multistream_udp_tcp_100mbps.py for the full
+    # writeup.
+    page.get_by_role("button", name="Start", exact=True).click()
     _buffer(page)
+    continue_btn = page.get_by_role("button", name="Continue", exact=True)
+    if continue_btn.is_visible():
+        continue_btn.click()
 
-    # --- Activate / Start ---
-    expect(page.get_by_role("button", name="Deactivate")).to_be_visible(timeout=75000)
-    page.get_by_role("button", name="Start").click()
-    page.wait_for_timeout(2000)
+    # Activation + traffic start together carry the same `?wait=15`
+    # server-side contract the old two-step flow did, so give it the same
+    # real room rather than treating slow-but-working as a failure.
+    expect(page.get_by_role("heading", name="Statistics", exact=False)).to_be_visible(
+        timeout=75000
+    )
     page.get_by_role("button", name="← Dashboard").click()
     expect(page.get_by_text("Port Status")).to_be_visible()
 
@@ -321,9 +335,12 @@ def test_t10_edit_config_while_active(dashboard: Page, clean_testbed):
     # testbed and try to change the Streams step's frame-size field ---
     tile.get_by_role("button", name="Edit").click()
     _buffer(page)
-    # Confirm this really is the live post-Apply edit view (Deactivate
-    # present), not some stale/reset draft — same check as
-    # test_t10_deactivate_mid_run.py.
+    # Confirm this really is the live/active testbed's edit view
+    # (Deactivate present), not some stale/reset draft — same check as
+    # test_t10_deactivate_mid_run.py. This is a genuine assertion about
+    # the ACTIVE testbed's state, independent of the 2026-09-17 Apply/
+    # Start UI change (which only affects a never-yet-activated draft's
+    # bottom bar) — not touched for that change.
     expect(page.get_by_role("button", name="Deactivate", exact=True)).to_be_visible(timeout=15000)
 
     page.get_by_role("button", name="3 Streams traffic flows — at").click()
@@ -367,20 +384,24 @@ def test_t10_edit_config_while_active(dashboard: Page, clean_testbed):
             f"now reads {value_after_typing!r} (typed {EDITED_FRAME_SIZE!r})"
         )
 
+        # "Apply" is no longer checked as a fallback here — per the
+        # 2026-09-17 UI change it doesn't exist anywhere in this product
+        # any more (drafts now save-and-activate via "Start"), and this
+        # active-testbed action bar was already documented (see module
+        # docstring) as showing "Save", not "Apply", even before that
+        # change — so the old Apply fallback below was already unreachable
+        # in practice.
         save_btn = page.get_by_role("button", name="Save", exact=True)
-        apply_btn = page.get_by_role("button", name="Apply", exact=True)
         if save_btn.count() > 0 and save_btn.is_visible():
             save_target, save_label = save_btn, "Save"
-        elif apply_btn.count() > 0 and apply_btn.is_visible():
-            save_target, save_label = apply_btn, "Apply"
         else:
             save_target = None
 
         assert save_target is not None, (
             "Frame-size field was editable and accepted a new value while "
-            "the testbed was LIVE, but neither a 'Save' nor an 'Apply' "
-            "control was found in the action bar to attempt committing "
-            "it — can't tell whether this state is even savable."
+            "the testbed was LIVE, but no 'Save' control was found in the "
+            "action bar to attempt committing it — can't tell whether this "
+            "state is even savable."
         )
         print(f"[edit-while-active] Clicking {save_label!r} to attempt committing the mid-run edit")
         save_target.click()
