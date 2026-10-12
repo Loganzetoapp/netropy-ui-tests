@@ -1,0 +1,62 @@
+{
+  "run_id": "20261001T093028Z",
+  "run_code": "RUN-118",
+  "timestamp": "2026-10-01T09:30:28Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 359.669,
+  "tests": [
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_64b_frame_protocols.py::test_t14_64b_frames_leave_unit_healthy[chromium-UDP]",
+      "outcome": "pass",
+      "duration": 64.026,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_64b_frame_protocols.py::test_t14_64b_frames_leave_unit_healthy[chromium-ICMP]",
+      "outcome": "pass",
+      "duration": 58.522,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_64b_frame_protocols.py::test_t14_64b_frames_leave_unit_healthy[chromium-ARP]",
+      "outcome": "pass",
+      "duration": 93.604,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_64b_frame_protocols.py::test_t14_64b_frames_leave_unit_healthy[chromium-DNS]",
+      "outcome": "fail",
+      "duration": 41.694,
+      "failure_message": "conftest.SystemBadStateError: Run #1 ended but was never saved (stats lost). Header: 'Statistics \u2014 T14-64B-DNS \u00b7 UID: cfb10b3c\\nTraffic Engine\\nACTIVE'; status text: ['LIVE \u00b7 IDLE', 'Ready to start traffic', 'Ports are armed and idle. Start traffic to begin collecting live statistics.']; toasts: []",
+      "screenshot": "artifacts/tests-t14-64b-frame-bad-state-test-t14-64b-frame-protocols-py-test-t14-64b-frames-leave-unit-healthy-chromium-dns/test-failed-1.png",
+      "trace": null,
+      "failure_kind": "system"
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_64b_frame_protocols.py::test_t14_64b_frames_leave_unit_healthy[chromium-UDP-IPv6]",
+      "outcome": "fail",
+      "duration": 41.337,
+      "failure_message": "conftest.SystemBadStateError: Run #1 ended but was never saved (stats lost). Header: 'Statistics \u2014 T14-64B-UDP6 \u00b7 UID: 519847f7\\nTraffic Engine\\nACTIVE'; status text: ['LIVE \u00b7 IDLE', 'Ready to start traffic', 'Ports are armed and idle. Start traffic to begin collecting live statistics.']; toasts: []",
+      "screenshot": "artifacts/tests-t14-64b-frame-bad-state-test-t14-64b-frame-protocols-py-test-t14-64b-frames-leave-unit-healthy-chromium-udp-ipv6/test-failed-1.png",
+      "trace": null,
+      "failure_kind": "system"
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_64b_frame_protocols.py::test_t14_64b_frames_leave_unit_healthy[chromium-canary-UDP-1500B]",
+      "outcome": "pass",
+      "duration": 60.435,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "run_id": "20261001T071611Z",
+  "run_code": "RUN-112",
+  "timestamp": "2026-10-01T07:16:11Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 66.26,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_t12_lifecycle_multistream_tcp_icmp_3gbps.py::test_t10_t12_lifecycle_multistream_tcp_icmp_3gbps[chromium]",
+      "outcome": "fail",
+      "duration": 66.228,
+      "failure_message": "AssertionError: run verdict 'fail'; saved run row: '#1LATEST\\t10/1/2026, 12:15:49 AM\\t0:00:35\\t0:00:39\\t3.112 Gbps\\t1.447 Gbps\\t52.518 %\\t\\nFAIL\\n\u2699\\n\\t\\nPDF\\nXLSX\\nCSV\\nJSON\\nFULL\\nZIP\\n\\t'\nassert 'fail' == 'pass'\n  \n  - pass\n  + fail",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-t12-lifecycle-multistream-tcp-icmp-3gbps-py-test-t10-t12-lifecycle-multistream-tcp-icmp-3gbps-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

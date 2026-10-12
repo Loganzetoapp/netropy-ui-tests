@@ -1,0 +1,108 @@
+{
+  "run_id": "20261001T015736Z",
+  "run_code": "RUN-82",
+  "timestamp": "2026-10-01T01:57:36Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "target": "http://192.168.173.89",
+  "duration": 256.518,
+  "tests": [
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_testbed.py::test_t4_create_testbed_adds_card_and_increments_counter[chromium]",
+      "outcome": "fail",
+      "duration": 5.451,
+      "failure_message": "AssertionError: assert 40 == (40 + 1)\n +  where 40 = _saved_count(<Page url='http://192.168.173.89/'>)",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-create-testbed-py-test-t4-create-testbed-adds-card-and-increments-counter-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_testbed.py::test_t4_create_testbed_adds_card_and_increments_counter[chromium]",
+      "outcome": "error",
+      "duration": 30.06,
+      "failure_message": "failed on teardown with \"playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Create-DeleteMe\").locator(\"[data-tip=\\\"Delete\\\"] button\")\n    - locator resolved to <button>\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> interce",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-create-testbed-py-test-t4-create-testbed-adds-card-and-increments-counter-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_empty_name_disables_create_draft[chromium]",
+      "outcome": "error",
+      "duration": 30.926,
+      "failure_message": "failed on teardown with \"playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Validation-DeleteMe\").locator(\"[data-tip=\\\"Delete\\\"] button\")\n    - locator resolved to <button>\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> int",
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_duplicate_name_shows_inline_error[chromium]",
+      "outcome": "fail",
+      "duration": 30.949,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"button\", name=\"\u271a Create Testbed\", exact=True)\n    - locator resolved to <button class=\"btn btn-sm btn-navy\">\u271a Create Testbed</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> intercepts pointer events\n  ",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-create-validation-py-test-t4-create-duplicate-name-shows-inline-error-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_duplicate_name_shows_inline_error[chromium]",
+      "outcome": "error",
+      "duration": 30.062,
+      "failure_message": "failed on teardown with \"playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Validation-DeleteMe\").locator(\"[data-tip=\\\"Delete\\\"] button\")\n    - locator resolved to <button>\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> int",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-create-validation-py-test-t4-create-duplicate-name-shows-inline-error-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_delete_testbed.py::test_t4_delete_from_card_removes_tile[chromium]",
+      "outcome": "fail",
+      "duration": 30.778,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Delete-DeleteMe\").locator(\"[data-tip=\\\"Delete\\\"] button\")\n    - locator resolved to <button>\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> intercepts pointer events\n    - ",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-delete-testbed-py-test-t4-delete-from-card-removes-tile-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_delete_testbed.py::test_t4_delete_from_card_removes_tile[chromium]",
+      "outcome": "error",
+      "duration": 30.052,
+      "failure_message": "failed on teardown with \"playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Delete-DeleteMe\").locator(\"[data-tip=\\\"Delete\\\"] button\")\n    - locator resolved to <button>\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> interce",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-delete-testbed-py-test-t4-delete-from-card-removes-tile-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_delete_testbed.py::test_t4_delete_from_inside_edit_removes_tile[chromium]",
+      "outcome": "pass",
+      "duration": 2.81,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_duplicate_testbed.py::test_t4_duplicate_testbed_creates_card_with_distinct_uid[chromium]",
+      "outcome": "fail",
+      "duration": 30.765,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Duplicate-DeleteMe\").first.locator(\"[data-tip=\\\"Clone (without ports)\\\"] button\")\n    - locator resolved to <button>\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> intercep",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-duplicate-testbed-py-test-t4-duplicate-testbed-creates-card-with-distinct-uid-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_duplicate_testbed.py::test_t4_duplicate_testbed_creates_card_with_distinct_uid[chromium]",
+      "outcome": "error",
+      "duration": 30.058,
+      "failure_message": "failed on teardown with \"playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Duplicate-DeleteMe\").last.locator(\"[data-tip=\\\"Delete\\\"] button\")\n    - locator resolved to <button>\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div>",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-duplicate-testbed-py-test-t4-duplicate-testbed-creates-card-with-distinct-uid-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_export_import_roundtrip.py::test_t4_export_then_import_recreates_equivalent_testbed[chromium]",
+      "outcome": "fail",
+      "duration": 3.173,
+      "failure_message": "AssertionError: assert {'feature': '...eam': [], ...} == {'feature': '...eam': [], ...}\n  \n  Omitting 4 identical items, use -vv to show\n  Differing items:\n  {'uid': '55dc4df8264144a1b913185aa830ff8b'} != {'uid': 'd7d9e724de0342fb9c73b8663315a291'}\n  Use -v to get more diff",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-export-import-roundtrip-py-test-t4-export-then-import-recreates-equivalent-testbed-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_import_malformed_file.py::test_t4_import_malformed_json_shows_error_no_broken_card[chromium]",
+      "outcome": "pass",
+      "duration": 0.651,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

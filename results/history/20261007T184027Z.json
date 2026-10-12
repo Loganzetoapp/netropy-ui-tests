@@ -1,0 +1,457 @@
+{
+  "run_id": "20261007T184027Z",
+  "run_code": "RUN-143",
+  "timestamp": "2026-10-07T18:40:27Z",
+  "git_sha": "5277c43",
+  "git_branch": "wan-emulator-t15",
+  "markers": "stateful",
+  "target": "http://192.168.173.212",
+  "duration": 150.752,
+  "tests": [
+    {
+      "nodeid": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+      "outcome": "pass",
+      "duration": 150.704,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null,
+      "metrics": {
+        "test": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+        "impairment": {
+          "engine": 2,
+          "path": "t15-ntg-delay",
+          "a-to-b": {
+            "delay": "constant 50 ms"
+          },
+          "b-to-a": {
+            "delay": "constant 50 ms"
+          }
+        },
+        "checks": [
+          {
+            "name": "baseline: NTG Port 3 avg TX = configured rate",
+            "expected": 500,
+            "measured": 478.609,
+            "tolerance": 75.0,
+            "unit": "Mbps",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "baseline: NTG Port 4 avg TX = configured rate",
+            "expected": 500,
+            "measured": 47.847,
+            "tolerance": 75.0,
+            "unit": "Mbps",
+            "ok": false,
+            "enforced": false
+          },
+          {
+            "name": "baseline: emulator a-to-b frames = NTG Port 3\u21924 frames sent",
+            "expected": 902220,
+            "measured": 902220,
+            "tolerance": 4511.1,
+            "unit": "frames",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "baseline: emulator b-to-a frames = NTG Port 4\u21923 frames sent",
+            "expected": 90222,
+            "measured": 90222,
+            "tolerance": 451.11,
+            "unit": "frames",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "delayed: NTG Port 3 avg TX = configured rate",
+            "expected": 500,
+            "measured": 464.346,
+            "tolerance": 75.0,
+            "unit": "Mbps",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "delayed: NTG Port 4 avg TX = configured rate",
+            "expected": 500,
+            "measured": 46.457,
+            "tolerance": 75.0,
+            "unit": "Mbps",
+            "ok": false,
+            "enforced": false
+          },
+          {
+            "name": "delayed: emulator a-to-b frames = NTG Port 3\u21924 frames sent",
+            "expected": 902220,
+            "measured": 902220,
+            "tolerance": 4511.1,
+            "unit": "frames",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "delayed: emulator b-to-a frames = NTG Port 4\u21923 frames sent",
+            "expected": 90222,
+            "measured": 90222,
+            "tolerance": 451.11,
+            "unit": "frames",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "baseline: Avg Latency card = API avg-latency",
+            "expected": 0.223,
+            "measured": 0.22320500000000001,
+            "tolerance": 0.001,
+            "unit": "ms",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "delayed: Avg Latency card = API avg-latency",
+            "expected": 50.223,
+            "measured": 50.223181,
+            "tolerance": 0.001,
+            "unit": "ms",
+            "ok": true,
+            "enforced": false
+          },
+          {
+            "name": "avg latency added by the emulator",
+            "expected": 50,
+            "measured": 50.0,
+            "tolerance": 5,
+            "unit": "ms",
+            "ok": true,
+            "enforced": true
+          }
+        ],
+        "written-at": "2026-10-07T18:40:13.256576+00:00",
+        "runs": [
+          {
+            "label": "baseline",
+            "ntg": {
+              "run-id": "1791398364949",
+              "number": 1,
+              "end-reason": "completed",
+              "tail-not-settled": false,
+              "stages": {
+                "ramp-up-sec": 2.0,
+                "main-sec": 20.0,
+                "ramp-down-sec": 2.0,
+                "tail-sec": 4.159
+              },
+              "summary": {
+                "tx-rate": 526.456,
+                "rx-rate": 526.456,
+                "tx-frames": 992442,
+                "rx-frames": 992442,
+                "loss-frames": 0,
+                "loss-pct": 0.0,
+                "avg-latency": 223.205,
+                "min-latency": 24.0,
+                "max-latency": 422.0,
+                "avg-jitter": 24.107,
+                "max-jitter": 393.0,
+                "duration": 24.0
+              },
+              "port": [
+                {
+                  "port-id": 3,
+                  "avg-tx-rate": 478.609,
+                  "avg-rx-rate": 47.847,
+                  "tx-frames": 902220,
+                  "rx-frames": 90222,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 223.395
+                },
+                {
+                  "port-id": 4,
+                  "avg-tx-rate": 47.847,
+                  "avg-rx-rate": 478.609,
+                  "tx-frames": 90222,
+                  "rx-frames": 902220,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 223.186
+                }
+              ],
+              "direction": [
+                {
+                  "from-port": 3,
+                  "to-port": 4,
+                  "tx-frames": 902220,
+                  "rx-frames": 902220,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 223.186,
+                  "min-latency": 24.0,
+                  "max-latency": 418.0,
+                  "avg-jitter": 24.107
+                },
+                {
+                  "from-port": 4,
+                  "to-port": 3,
+                  "tx-frames": 90222,
+                  "rx-frames": 90222,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 223.395,
+                  "min-latency": 24.0,
+                  "max-latency": 422.0,
+                  "avg-jitter": 24.116
+                }
+              ],
+              "configured-ports": [
+                {
+                  "port-id": 3,
+                  "rate-mbps": 500,
+                  "speed-mbps": 10000
+                },
+                {
+                  "port-id": 4,
+                  "rate-mbps": 500,
+                  "speed-mbps": 10000
+                }
+              ]
+            },
+            "wan": {
+              "engine": 2,
+              "path": "Bypass",
+              "path-index": 0,
+              "delta": {
+                "a-to-b": {
+                  "index": 0,
+                  "direction": "a-to-b",
+                  "first": 0,
+                  "rate": 0,
+                  "frames": 902220,
+                  "bytes": 1356938880
+                },
+                "b-to-a": {
+                  "index": 0,
+                  "direction": "b-to-a",
+                  "first": 0,
+                  "rate": 0,
+                  "frames": 90222,
+                  "bytes": 135693888
+                }
+              },
+              "buffers": {
+                "failures": 22379015988,
+                "free": 99
+              },
+              "seq": [
+                150594,
+                150633
+              ]
+            }
+          },
+          {
+            "label": "delayed",
+            "ntg": {
+              "run-id": "1791398433467",
+              "number": 1,
+              "end-reason": "completed",
+              "tail-not-settled": false,
+              "stages": {
+                "ramp-up-sec": 2.0,
+                "main-sec": 20.0,
+                "ramp-down-sec": 2.0,
+                "tail-sec": 4.156
+              },
+              "summary": {
+                "tx-rate": 510.803,
+                "rx-rate": 511.158,
+                "tx-frames": 992442,
+                "rx-frames": 992442,
+                "loss-frames": 0,
+                "loss-pct": 0.0,
+                "avg-latency": 50223.181,
+                "min-latency": 50023.0,
+                "max-latency": 50417.0,
+                "avg-jitter": 24.107,
+                "max-jitter": 392.0,
+                "duration": 25.0
+              },
+              "port": [
+                {
+                  "port-id": 3,
+                  "avg-tx-rate": 464.346,
+                  "avg-rx-rate": 46.49,
+                  "tx-frames": 902220,
+                  "rx-frames": 90222,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 50223.266
+                },
+                {
+                  "port-id": 4,
+                  "avg-tx-rate": 46.457,
+                  "avg-rx-rate": 464.668,
+                  "tx-frames": 90222,
+                  "rx-frames": 902220,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 50223.172
+                }
+              ],
+              "direction": [
+                {
+                  "from-port": 3,
+                  "to-port": 4,
+                  "tx-frames": 902220,
+                  "rx-frames": 902220,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 50223.172,
+                  "min-latency": 50023.0,
+                  "max-latency": 50417.0,
+                  "avg-jitter": 24.107
+                },
+                {
+                  "from-port": 4,
+                  "to-port": 3,
+                  "tx-frames": 90222,
+                  "rx-frames": 90222,
+                  "dropped": 0,
+                  "loss-pct": 0.0,
+                  "avg-latency": 50223.266,
+                  "min-latency": 50024.0,
+                  "max-latency": 50415.0,
+                  "avg-jitter": 24.111
+                }
+              ],
+              "configured-ports": [
+                {
+                  "port-id": 3,
+                  "rate-mbps": 500,
+                  "speed-mbps": 10000
+                },
+                {
+                  "port-id": 4,
+                  "rate-mbps": 500,
+                  "speed-mbps": 10000
+                }
+              ]
+            },
+            "wan": {
+              "engine": 2,
+              "path": "t15-ntg-delay",
+              "path-index": 3,
+              "delta": {
+                "a-to-b": {
+                  "index": 0,
+                  "direction": "a-to-b",
+                  "first": 0,
+                  "rate": 0,
+                  "frames": 902220,
+                  "bytes": 1356938880,
+                  "drops": 0,
+                  "inflow": {
+                    "rate": 0,
+                    "frames": 902220,
+                    "bytes": 1356938880,
+                    "queue": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "length": "0/0",
+                      "drops": 0
+                    },
+                    "background": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "drops": 0
+                    }
+                  },
+                  "wan": {
+                    "drops": 0,
+                    "duplicates": 0,
+                    "reorders": 0,
+                    "corruptions": 0
+                  },
+                  "outflow": {
+                    "rate": 0,
+                    "frames": 0,
+                    "bytes": 0,
+                    "queue": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "length": "0/0",
+                      "drops": 0
+                    },
+                    "background": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "drops": 0
+                    }
+                  }
+                },
+                "b-to-a": {
+                  "index": 0,
+                  "direction": "b-to-a",
+                  "first": 0,
+                  "rate": 0,
+                  "frames": 90222,
+                  "bytes": 135693888,
+                  "drops": 0,
+                  "inflow": {
+                    "rate": 0,
+                    "frames": 90222,
+                    "bytes": 135693888,
+                    "queue": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "length": "0/0",
+                      "drops": 0
+                    },
+                    "background": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "drops": 0
+                    }
+                  },
+                  "wan": {
+                    "drops": 0,
+                    "duplicates": 0,
+                    "reorders": 0,
+                    "corruptions": 0
+                  },
+                  "outflow": {
+                    "rate": 0,
+                    "frames": 0,
+                    "bytes": 0,
+                    "queue": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "length": "0/0",
+                      "drops": 0
+                    },
+                    "background": {
+                      "frames": 0,
+                      "bytes": 0,
+                      "drops": 0
+                    }
+                  }
+                }
+              },
+              "buffers": {
+                "failures": 22379015988,
+                "free": 99
+              },
+              "seq": [
+                150664,
+                150703
+              ]
+            }
+          }
+        ]
+      },
+      "metrics_file": "results/metrics/tests-t15-wan-emulator-test-t15-delay-only-py-test-t15-delay-only-adds-expected-latency-chromium-20261007T184013Z.json"
+    }
+  ],
+  "batch_id": "d328a9f6-3ec3-4b7e-b61e-b86187b362b1"
+}

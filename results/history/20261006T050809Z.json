@@ -1,0 +1,20 @@
+{
+  "run_id": "20261006T050809Z",
+  "run_code": "RUN-137",
+  "timestamp": "2026-10-06T05:08:09Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.212",
+  "duration": 150.131,
+  "tests": [
+    {
+      "nodeid": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+      "outcome": "pass",
+      "duration": 150.112,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

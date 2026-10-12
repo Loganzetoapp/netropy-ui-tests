@@ -1,0 +1,68 @@
+{
+  "run_id": "20261001T095533Z",
+  "run_code": "RUN-122",
+  "timestamp": "2026-10-01T09:55:33Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 424.675,
+  "tests": [
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py::test_t14_frame_size_vs_protocol_headers[chromium-TCP-72B]",
+      "outcome": "pass",
+      "duration": 63.572,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py::test_t14_frame_size_vs_protocol_headers[chromium-TCP-80B]",
+      "outcome": "pass",
+      "duration": 60.817,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py::test_t14_frame_size_vs_protocol_headers[chromium-TCP-96B]",
+      "outcome": "pass",
+      "duration": 62.913,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py::test_t14_frame_size_vs_protocol_headers[chromium-TCP-128B]",
+      "outcome": "pass",
+      "duration": 59.503,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py::test_t14_frame_size_vs_protocol_headers[chromium-TCP-IPv6-128B]",
+      "outcome": "pass",
+      "duration": 59.265,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py::test_t14_frame_size_vs_protocol_headers[chromium-HTTP-256B]",
+      "outcome": "pass",
+      "duration": 58.75,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t14_64b_frame_bad_state/test_t14_frame_size_vs_headers.py::test_t14_frame_size_vs_protocol_headers[chromium-HTTP-1500B]",
+      "outcome": "pass",
+      "duration": 59.84,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

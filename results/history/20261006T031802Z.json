@@ -1,0 +1,21 @@
+{
+  "run_id": "20261006T031802Z",
+  "run_code": "RUN-134",
+  "timestamp": "2026-10-06T03:18:02Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 32.678,
+  "tests": [
+    {
+      "nodeid": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+      "outcome": "error",
+      "duration": 32.521,
+      "failure_message": "failed on setup with \"playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.\nCall log:\n  - navigating to \"http://192.168.173.89/\", waiting until \"load\"\"",
+      "screenshot": null,
+      "trace": null
+    }
+  ],
+  "batch_id": "12d5748d-a3a5-4443-b12d-4e0e2039e890"
+}

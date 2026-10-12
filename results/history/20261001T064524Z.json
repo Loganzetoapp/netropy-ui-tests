@@ -1,0 +1,20 @@
+{
+  "run_id": "20261001T064524Z",
+  "run_code": "RUN-100",
+  "timestamp": "2026-10-01T06:45:24Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.89",
+  "duration": 38.488,
+  "tests": [
+    {
+      "nodeid": "tests/test_zz_probe_tmp.py::test_probe[chromium]",
+      "outcome": "fail",
+      "duration": 38.374,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"button\", name=\"Delete\", exact=True).last\n    - locator resolved to <button class=\"btn btn-outline btn-hover-danger\">\u2026</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div>\u2026</div> intercepts pointer events\n    - ret",
+      "screenshot": "artifacts/tests-test-zz-probe-tmp-py-test-probe-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}
