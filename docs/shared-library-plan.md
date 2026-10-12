@@ -145,4 +145,5 @@ Each phase ends with a gate. Nothing stateful runs without Logan's explicit go-a
 ## 7. UI notes found during this investigation (to report)
 
 - In the Network step's table view, the subnet column header is just "/" and its dropdown has no accessible name, so screen readers announce nothing useful. (It's also why the selector is hard to write without position.)
-- The Load Profile copy and controls changed with no version note visible in the UI. A build/version string on the dashboard would let test history record which build a run was on.
+- ~~No version visible~~. Correction: Menu → Settings shows "Version 5.0.9", and `/system` returns it. The suite now records it per run.
+- Correction to §1: `set_addressing` is **not** broken. The CIDR select offers only /25–/32, and my probe passed /24. Only `set_ramp` is broken on 5.0.9 (the Load Profile text changed).

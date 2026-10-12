@@ -9,6 +9,61 @@ Compiled against the live box, chromium, logged in as `test`.
 
 ---
 
+## What changed in 5.0.9 (mapped 2026-10-11 on 192.168.173.212)
+
+The firmware version is on **Menu → Settings** ("Version 5.0.9") and in `GET /ctrl/v1/system`
+(`version`). The suite records it per run. Compared with 5.0.7:
+
+- **Testbed details row (table view).** The first column is **Expand** (`button "Expand details"`,
+  tooltip "Configuration summary + latest run"). Expanded, it shows:
+  - **Configuration**: feature, port count, stream count, run duration ("until stopped" /
+    ramp total), and per port its line-rate share, Src IP/CIDR, Dst IP, VLAN, role ("Bidirectional ·
+    paired ↔ Port 4") and max rate. A stream table follows: Stream / Protocol / Frame / Share / Ports
+    / Settings ("L4 2048 → 2048 · TTL 64").
+  - **Latest run**: "Run #N · PASS", date, duration and end reason ("· stopped"), `Open run #N`,
+    Stats and "All reports (N)" buttons. Then cumulative avg rate, total loss, avg latency
+    (min · max), total frames (rx). A per-port table follows: TX frames / RX frames / Avg TX rate /
+    Avg RX rate / Loss / Latency / Jitter. Last comes "Run history · last N".
+  - These are the same numbers as the saved run in `GET /tests/{name}/runs/{id}`, which the
+    summary sheet reads.
+- **Ownership on cards and rows.** "User / Created by / Created / In use by". For a testbed you
+  don't own, **Start** and **Delete** are disabled with "Owned by admin. Only its owner or an admin
+  can change it." Clone is "Clone (without ports)". Reports is a numbered button ("View saved runs
+  on the Stats page").
+- **Port Status** rows include MAC / PCI / SFP / MTU in the Port cell. For ports held by another
+  user's testbed, the Reserve cell reads "Release — In use by testbed "TE" — releasing deactivates
+  it". The API reports `releasable: false` for those ports (see UI issues below).
+- **Editor**: a stepper of `tab`s at the top (`"1 Ports 2 Ports"`, `"3 Streams 1 stream"`,
+  `"4 Traffic and Load Profile until stopped"`), plus **Show all steps** (on: every step
+  rendered) and **Collapse all steps**. Step headers are still `button "N <Title> …"`. Steps 2–4
+  read "select ports first" until a port is on. Column headers carry tooltips.
+- **Network step**: the CIDR select offers **/25–/32 only** (values `"25"`…`"32"`, labels
+  `"/25"`…). `/24` and wider don't exist. The column header is just "/".
+- **Load Profile**: the toggle is an **unlabelled `checkbox`** next to "Load profile". Off, it reads
+  **"Disabled | Runs until Manual Stop"** plus a "Manual Stop — no end time" chip (a status chip, not
+  a picker). On ("Ramp enabled"), Ramp up / Hold time / Ramp down are unchanged, with unit selects
+  now labelled `"Ramp up unit"` etc. A Total Duration badge and the formula line are shown.
+  "Testbed-wide bandwidth cap is not configurable yet."
+- **Stats page**: the header reads "LIVE · IDLE". Buttons: `▶ Start`, a "Test Reports N saved"
+  toggle. Report buttons per run are **⚙ PDF XLSX CSV JSON FULL ZIP** (FULL is new) and "Delete
+  run". The idle panel is `status` "Ready to start traffic", with `Last run #N · … ` and
+  `Start Traffic`.
+- **Settings page** (Menu → Settings; it's an in-app view, so leave via `← Dashboard`, since
+  `goto("/")` stays on Settings). Filter chips: All / Management / Ports / Users /
+  **API Tokens & Units** / Testbed / System. API Tokens can mint a token. Units lets you add peer
+  units (multisite). Testbed has port Reserve/Reset/**Reset all** and **Download backup**. System has
+  License (TrafficEngine + SessionStrike licensed) and firmware upload (admin only).
+- **Menu** (gear, `button "Menu"`): Dark mode / User / Settings / About / Help / Sign out.
+
+**UI issues seen (report, don't test)**:
+1. Logged in as `test`, on admin's "TE" testbed, the Stats page shows `▶ Start`, `Start Traffic`
+   and `Delete run` enabled. The dashboard disables Start for the same testbed.
+2. The Port Status `Release` button is enabled on admin's ports 3/4 while `/units/local/ports`
+   says `releasable: false`.
+3. The Load Profile checkbox and the Network "/" CIDR select have no accessible name.
+
+---
+
 ## What changed in NTG 5.0 (5.0.7, mapped 2026-09-30 on 192.168.173.89)
 
 The rest of this file describes 4.0. Differences that matter for tests:
