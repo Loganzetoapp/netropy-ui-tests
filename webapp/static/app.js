@@ -1111,8 +1111,14 @@ function renderChecksTable(checks) {
   if (!checks || checks.length === 0) return "";
   const rows = checks
     .map((c) => {
-      const delta = typeof c.measured === "number" && typeof c.expected === "number" ? c.measured - c.expected : null;
-      const tol = typeof c.tolerance === "number" ? `± ${fmtCheckValue(c.tolerance, c.unit)}` : "exact";
+      const isMin = c.kind === "min";
+      const delta =
+        !isMin && typeof c.measured === "number" && typeof c.expected === "number" ? c.measured - c.expected : null;
+      const tol = isMin
+        ? `≥ ${fmtCheckValue(c.expected, c.unit)}`
+        : typeof c.tolerance === "number"
+          ? `± ${fmtCheckValue(c.tolerance, c.unit)}`
+          : "exact";
       return `<tr class="${!c.ok ? "row-bad" : ""}">
         <td>${escapeHtml(c.name)}</td>
         <td class="num">${fmtCheckValue(c.expected, c.unit)}</td>
@@ -1251,15 +1257,79 @@ function describeImpairment(imp) {
     path “${escapeHtml(imp.path || "?")}” — ${escapeHtml(dirs)}</div>`;
 }
 
+// The NTG-only view of a run, for tests that don't go through the WAN
+// emulator: the same totals the NTG dashboard's "Expand details" panel shows.
+function renderNtgSummary(ntg) {
+  const s = (ntg && ntg.summary) || {};
+  if (Object.keys(s).length === 0) return "";
+  const ms = (us) => (typeof us === "number" ? `${fmtNum(us / 1000, 3)} ms` : "—");
+  const verdict = ntg.verdict
+    ? `<span class="pill ${ntg.verdict === "pass" ? "pill-ok" : "pill-bad"}">${escapeHtml(ntg.verdict.toUpperCase())}</span>`
+    : "";
+  const criteria = ntg.criteria ? "" : ` <span class="muted-cell">(no pass criteria set on the NTG)</span>`;
+  return `
+    <div class="metrics-run-meta">NTG verdict ${verdict}${criteria}</div>
+    <table class="metrics-table">
+      <thead><tr><th class="num">Avg TX</th><th class="num">Avg RX</th><th class="num">Frames sent</th>
+        <th class="num">Frames received</th><th class="num">Loss</th><th class="num">Avg latency</th>
+        <th class="num">Min / max latency</th><th class="num">Avg jitter</th></tr></thead>
+      <tbody><tr>
+        <td class="num">${fmtNum(s["tx-rate"], 1)} Mbps</td>
+        <td class="num">${fmtNum(s["rx-rate"], 1)} Mbps</td>
+        <td class="num">${fmtNum(s["tx-frames"])}</td>
+        <td class="num">${fmtNum(s["rx-frames"])}</td>
+        <td class="num">${fmtNum(s["loss-pct"], 3)} %</td>
+        <td class="num">${ms(s["avg-latency"])}</td>
+        <td class="num">${ms(s["min-latency"])} / ${ms(s["max-latency"])}</td>
+        <td class="num">${ms(s["avg-jitter"])}</td>
+      </tr></tbody>
+    </table>`;
+}
+
+function renderNtgDirections(ntg) {
+  const dirs = ntgDirections(ntg);
+  if (dirs.length === 0) return "";
+  const rows = dirs
+    .map(
+      (d) => `<tr class="${d.dropped ? "row-bad" : ""}">
+        <td>Port ${escapeHtml(String(d.from))} → ${escapeHtml(String(d.to))}</td>
+        <td class="num">${fmtNum(d.tx)}</td>
+        <td class="num">${fmtNum(d.rx)}</td>
+        <td class="num">${fmtNum(d.dropped)}</td>
+        <td class="num">${fmtNum(d.latency / 1000, 3)} ms</td>
+      </tr>`
+    )
+    .join("");
+  return `
+    <table class="metrics-table">
+      <thead><tr><th>Direction</th><th class="num">Sent</th><th class="num">Received</th>
+        <th class="num">Lost</th><th class="num">Avg latency</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+function describeUnit(unit) {
+  if (!unit) return "";
+  const parts = [unit.model, unit.version && `firmware ${unit.version}`, unit.target].filter(Boolean);
+  return `<div class="metrics-run-meta">Unit: ${escapeHtml(parts.join(" · "))}</div>`;
+}
+
 function renderMetrics(test) {
   const m = test.metrics;
   if (!m) return "";
   const runs = (m.runs || [])
-    .map(
-      (r) => `
+    .map((r) =>
+      r.wan
+        ? `
       <h4>${escapeHtml(r.label)} run: what each box counted</h4>
       ${renderRunMeta(r)}
       ${renderWitnessTable(r)}
+      ${renderPortRateTable(r.ntg)}`
+        : `
+      <h4>${escapeHtml(r.label)} run: what the NTG measured</h4>
+      ${renderRunMeta(r)}
+      ${renderNtgSummary(r.ntg)}
+      ${renderNtgDirections(r.ntg)}
       ${renderPortRateTable(r.ntg)}`
     )
     .join("");
@@ -1270,6 +1340,7 @@ function renderMetrics(test) {
     : "";
   return `
     <div class="metrics">
+      ${describeUnit(m.unit)}
       ${describeImpairment(m.impairment)}
       ${renderChecksTable(m.checks)}
       ${runs}
@@ -1485,7 +1556,9 @@ function renderSeriesCharts(record) {
   charts.push(
     lineChart({
       title: "Average latency, NTG",
-      sub: "One line per run; the gap between them is what the emulator added.",
+      sub: runs.some((r) => r.wan)
+        ? "One line per run; the gap between them is what the emulator added."
+        : "Per second, seconds with traffic received.",
       unit: "ms",
       series: runs.slice(0, 2).map((r, i) => ({
         name: r.label,
@@ -1506,7 +1579,9 @@ function renderSeriesCharts(record) {
       charts.push(
         lineChart({
           title: `${r.label}: Port ${d.from} → ${d.to} throughput`,
-          sub: "What the NTG sent vs what the emulator carried; matching lines mean the two boxes agree.",
+          sub: r.wan
+            ? "What the NTG sent vs what the emulator carried; matching lines mean the two boxes agree."
+            : "What the sending port transmitted vs what its peer received.",
           unit: "Mbps",
           series: [
             {
@@ -1514,12 +1589,19 @@ function renderSeriesCharts(record) {
               color: colors[0],
               points: samples.map((s) => [s.at, ((s.port || []).find((p) => p["port-id"] === d.from) || {})["tx-rate"] || 0]),
             },
-            {
-              name: "Emulator",
-              color: colors[1],
-              dash: true,
-              points: emulatorPoints(r.series && r.series.wan, EMULATOR_DIRECTIONS[i], "overall-rate", startX, 1e-6),
-            },
+            r.wan
+              ? {
+                  name: "Emulator",
+                  color: colors[1],
+                  dash: true,
+                  points: emulatorPoints(r.series && r.series.wan, EMULATOR_DIRECTIONS[i], "overall-rate", startX, 1e-6),
+                }
+              : {
+                  name: "NTG received",
+                  color: colors[1],
+                  dash: true,
+                  points: samples.map((s) => [s.at, ((s.port || []).find((p) => p["port-id"] === d.to) || {})["rx-rate"] || 0]),
+                },
           ],
         })
       );

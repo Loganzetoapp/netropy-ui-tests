@@ -54,6 +54,10 @@ The firmware version is on **Menu → Settings** ("Version 5.0.9") and in `GET /
   units (multisite). Testbed has port Reserve/Reset/**Reset all** and **Download backup**. System has
   License (TrafficEngine + SessionStrike licensed) and firmware upload (admin only).
 - **Menu** (gear, `button "Menu"`): Dark mode / User / Settings / About / Help / Sign out.
+- **Add Stream modal** (a `.modal-overlay` div): the Name-prefix textbox and the **Quantity
+  spinbutton have no labels**; each is the only one of its role inside the overlay. New protocols:
+  OSPFv2, RIPv2, SSH, Telnet, FTP, IMAP, POP3, BGP, RTCP (WIP), MGCP, MEGACO/H.248, Raw Ethernet,
+  MPLS (plus the existing UDP/TCP/ICMP, IPv6 trio, HTTP/HTTPS WIP, DNS, NTP, SIP/RTP WIP, ARP, VXLAN).
 
 **UI issues seen (report, don't test)**:
 1. Logged in as `test`, on admin's "TE" testbed, the Stats page shows `▶ Start`, `Start Traffic`

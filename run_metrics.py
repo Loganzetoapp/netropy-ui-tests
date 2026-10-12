@@ -63,9 +63,62 @@ def ntg_run_digest(run: dict) -> dict:
     }
 
 
+def capture_ntg_run(api, testbed: str, run_id: str = None):
+    """(digest, saved run, stored config) for `testbed`'s latest saved run,
+    or `run_id`. Reads only /runs and /tests, never live /stats. The
+    digest gains `configured-ports` (rate-mbps per port) and the summary
+    fields the dashboard's Expand panel shows."""
+    if run_id is None:
+        latest = api.latest_run(testbed)
+        if latest is None:
+            raise AssertionError(f"{testbed}: the Controller has no saved run")
+        run_id = latest["run-id"]
+    saved = api.run(testbed, run_id)
+    config = api.test(testbed)
+    digest = ntg_run_digest(saved)
+    digest["verdict"] = saved.get("verdict")
+    digest["criteria"] = saved.get("criteria")
+    digest["duration-sec"] = saved.get("duration-sec")
+    digest["configured-ports"] = [
+        {k: p.get(k) for k in ("port-id", "rate-mbps", "speed-mbps")} for p in config.get("port", [])
+    ]
+    return digest, saved, config
+
+
+def standard_checks(metrics, label: str, digest: dict, expected_seconds: float = None,
+                    expect_traffic: bool = True) -> None:
+    """The checks every traffic test gets, so a run can't "pass" without
+    doing anything (the NTG's own verdict is "pass" with `criteria: null`).
+
+    Enforced: traffic was sent and received. Recorded only, until a
+    PASS/FAIL threshold is agreed: loss %, each port's average TX vs its
+    configured rate, and the run's length."""
+    s = digest.get("summary") or {}
+    if expect_traffic:
+        metrics.at_least(f"{label}: frames sent", minimum=1, measured=s.get("tx-frames"), unit="frames")
+        metrics.at_least(f"{label}: frames received", minimum=1, measured=s.get("rx-frames"),
+                         unit="frames")
+    metrics.check(f"{label}: loss %", expected=0.0, measured=s.get("loss-pct"), tolerance=0.01,
+                  unit="%", enforced=False)
+    actual = {p["port-id"]: p.get("avg-tx-rate") for p in digest.get("port") or []}
+    for port in digest.get("configured-ports") or []:
+        rate = port.get("rate-mbps")
+        if rate and port["port-id"] in actual:
+            metrics.check(f"{label}: NTG Port {port['port-id']} avg TX = configured rate",
+                          expected=rate, measured=actual[port["port-id"]], tolerance=rate * 0.15,
+                          unit="Mbps", enforced=False)
+    if expected_seconds:
+        metrics.check(f"{label}: run length", expected=expected_seconds,
+                      measured=digest.get("duration-sec"), tolerance=3, unit="s", enforced=False)
+
+
 class RunMetrics:
     def __init__(self, nodeid: str):
-        self.record = {"test": nodeid, "impairment": None, "runs": [], "checks": []}
+        self.record = {"test": nodeid, "unit": None, "impairment": None, "runs": [], "checks": []}
+
+    def set_unit(self, unit: dict) -> None:
+        """Which box and build the run was on (model, version, target)."""
+        self.record["unit"] = unit
 
     def set_impairment(self, impairment: dict) -> None:
         self.record["impairment"] = impairment
@@ -87,6 +140,15 @@ class RunMetrics:
         self.record["checks"].append({
             "name": name, "expected": expected, "measured": measured,
             "tolerance": tolerance, "unit": unit, "ok": ok, "enforced": enforced,
+        })
+        return ok
+
+    def at_least(self, name, minimum, measured, unit="", enforced=True) -> bool:
+        """Record measured >= minimum (shown as "≥ minimum" on the dashboard)."""
+        ok = measured is not None and measured >= minimum
+        self.record["checks"].append({
+            "name": name, "expected": minimum, "measured": measured, "tolerance": None,
+            "kind": "min", "unit": unit, "ok": ok, "enforced": enforced,
         })
         return ok
 

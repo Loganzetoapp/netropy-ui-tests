@@ -285,12 +285,29 @@ def build_summary(
         "git_branch": _git("rev-parse", "--abbrev-ref", "HEAD") or "unknown",
         "markers": markers or "",
         "target": os.environ.get("NETROPY_URL", ""),
+        "target_version": _target_version(),
         "duration": round(total_duration, 3),
         "tests": tests,
     }
     if batch_id:
         summary["batch_id"] = batch_id
     return summary
+
+
+def _target_version():
+    """The NTG firmware this run was against (e.g. "5.0.9"), so history can
+    tell builds apart. Best effort: None if the unit can't be asked."""
+    try:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from ntg_api import NtgApi
+
+        api = NtgApi(os.environ["NETROPY_URL"], os.environ["NETROPY_USER"], os.environ["NETROPY_PASS"],
+                     timeout=5)
+        return api.system().get("version")
+    except Exception:
+        return None
 
 
 def write_summary(summary: dict, history_dir: Path = DEFAULT_HISTORY_DIR) -> Path:
