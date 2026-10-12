@@ -1115,13 +1115,13 @@ function renderChecksTable(checks) {
       const delta =
         !isMin && typeof c.measured === "number" && typeof c.expected === "number" ? c.measured - c.expected : null;
       const tol = isMin
-        ? `≥ ${fmtCheckValue(c.expected, c.unit)}`
+        ? "—"
         : typeof c.tolerance === "number"
           ? `± ${fmtCheckValue(c.tolerance, c.unit)}`
           : "exact";
       return `<tr class="${!c.ok ? "row-bad" : ""}">
         <td>${escapeHtml(c.name)}</td>
-        <td class="num">${fmtCheckValue(c.expected, c.unit)}</td>
+        <td class="num">${isMin ? "≥ " : ""}${fmtCheckValue(c.expected, c.unit)}</td>
         <td class="num">${fmtCheckValue(c.measured, c.unit)}</td>
         <td class="num">${delta === null ? "—" : (delta > 0 ? "+" : "") + fmtCheckValue(delta, c.unit)}</td>
         <td class="num">${tol}</td>

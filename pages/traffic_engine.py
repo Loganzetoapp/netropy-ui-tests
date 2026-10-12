@@ -110,7 +110,7 @@ class TrafficEngine:
         except Exception as exc:
             self.health.diagnose_failed_start(name, exc)
 
-    def wait(self, name: str, spec: TestbedSpec, run_number: int = 1, label: str = "run") -> RunResult:
+    def wait(self, name: str, spec: TestbedSpec, run_number: int = 1, label: str = "main") -> RunResult:
         try:
             row = self.runs.wait_for_run_to_finish(
                 run_number, timeout=spec.run_seconds * 1000 + _RUN_SLACK_MS
@@ -122,7 +122,7 @@ class TrafficEngine:
         return self.result(name, row, label, expected_seconds=spec.run_seconds,
                            expect_traffic=spec.expect_traffic)
 
-    def result(self, name: str, row, label: str = "run", expected_seconds: float = None,
+    def result(self, name: str, row, label: str = "main", expected_seconds: float = None,
                expect_traffic: bool = True, run_id: str = None) -> RunResult:
         """A RunResult for a saved Test Reports `row`, with the run recorded
         on the summary sheet. For tests that drive the run themselves
@@ -131,13 +131,13 @@ class TrafficEngine:
         digest = self.record(name, label, expected_seconds, expect_traffic, run_id)
         return RunResult(name, verdict, row_text, digest, self.metrics)
 
-    def run(self, name: str, spec: TestbedSpec, label: str = "run") -> RunResult:
+    def run(self, name: str, spec: TestbedSpec, label: str = "main") -> RunResult:
         self.create(name, spec)
         self.start(name)
         return self.wait(name, spec, label=label)
 
     # --- summary sheet --------------------------------------------------
-    def record(self, name: str, label: str = "run", expected_seconds: float = None,
+    def record(self, name: str, label: str = "main", expected_seconds: float = None,
                expect_traffic: bool = True, run_id: str = None) -> Optional[dict]:
         """Read the saved run (latest, or `run_id`) through the API and add
         it, plus the standard checks, to the summary sheet. Without a
