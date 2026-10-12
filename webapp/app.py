@@ -716,6 +716,29 @@ def _validate_sharing_config(host: str, user: Optional[str], password: Optional[
         )
 
 
+def _ensure_port_free(host: str, port: int) -> None:
+    """Fail fast, with a readable message, when another process (usually a
+    dashboard left running in some other terminal) already holds the port.
+    Otherwise uvicorn prints "Application startup complete" and only then
+    an Errno 48 bind error, which reads like the dashboard itself is broken.
+    SO_REUSEADDR matches uvicorn's own bind, so a socket in TIME_WAIT from
+    a just-stopped dashboard doesn't count as taken."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((host, port))
+        except OSError as exc:
+            raise SystemExit(
+                f"Port {port} is already in use ({exc.strerror}) — most likely the "
+                f"dashboard is already running in another terminal. Open "
+                f"http://127.0.0.1:{port}/ to use it, or stop it first "
+                f"(`lsof -nP -iTCP:{port} -sTCP:LISTEN` shows the PID). "
+                "To run a second copy, set WEBAPP_PORT in .env."
+            ) from None
+
+
 if __name__ == "__main__":
     import socket
 
@@ -730,6 +753,7 @@ if __name__ == "__main__":
     password = os.environ.get("WEBAPP_PASSWORD")
 
     _validate_sharing_config(host, user, password)
+    _ensure_port_free(host, port)
     if user and password:
         app.add_middleware(BasicAuthMiddleware, user=user, password=password)
         print(f"Netropy Test Dashboard (login required): http://{host}:{port}/", flush=True)

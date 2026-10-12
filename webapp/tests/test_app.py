@@ -156,3 +156,23 @@ def test_findings_endpoint_includes_investigation_log(monkeypatch, tmp_path):
 
     monkeypatch.setattr(app_module, "INVESTIGATION_LOG_PATH", tmp_path / "missing.md")
     assert TestClient(app_module.app).get("/api/findings").json()["investigation_html"] is None
+
+
+def test_ensure_port_free_passes_on_an_unused_port():
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        free_port = s.getsockname()[1]
+    app_module._ensure_port_free("127.0.0.1", free_port)  # must not raise
+
+
+def test_ensure_port_free_refuses_a_port_another_process_is_listening_on():
+    import socket
+
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        taken_port = listener.getsockname()[1]
+        with pytest.raises(SystemExit, match="already in use"):
+            app_module._ensure_port_free("127.0.0.1", taken_port)
