@@ -4,8 +4,8 @@ Mapped 2026-10-11 on `http://192.168.173.213` (firmware 5.1.5) from three source
 page, a field-by-field walk of every form (options switched in unsaved forms only), and the
 box's own manuals (`/Netropy-Users-Guide.pdf` rev 5c and `/Netropy-API-Guide.pdf`, served by the
 unit itself). The API guide describes the 4.0 REST routes. This box uses the YANG `/api` routes in
-`wan_api.py`. UI helpers live in `wan_emulator.py`, and in `pages/wan_emulator_page.py` once the
-library exists.
+`wan_api.py`. UI helpers live in `pages/wan_emulator_page.py` (paths are described by
+`pages/wan_path_spec.py`, and run against the NTG by `pages/wan_bench.py`).
 
 ## Model
 

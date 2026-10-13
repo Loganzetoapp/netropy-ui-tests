@@ -37,6 +37,25 @@ Speaker 1's script style also works unchanged:
 `CreateTestbedPage(page).create_testbed(...)` … `.start_test(duration)`
 (`tests/t10_t12_lifecycle/test_t10_facade_examples.py`).
 
+## Add a WAN emulator test
+
+```python
+from pages.wan_path_spec import Impairment, WanPathSpec
+
+PATH = WanPathSpec("t15-delay", a_to_b=Impairment(delay_ms=50))   # b_to_a defaults to the same
+
+@pytest.mark.stateful
+def test_t15_my_case(wan_bench):
+    baseline = wan_bench.baseline(TESTBED, SPEC)     # Engine 2 bypass; reused within a session
+    run = wan_bench.impaired(TESTBED, SPEC, PATH)    # path applied, run, engine restored
+    wan_bench.check_delay(run, baseline, PATH)
+    wan_bench.assert_ok()
+```
+
+Every bench run also checks that the UI's Avg Latency card matches the saved run and that the
+emulator's frame counts match what the NTG sent. A new kind of impairment goes into
+`Impairment.fields()`, with a `check_*` method on `WanBench`.
+
 ## What's where
 
 | Module | What it covers |
@@ -48,7 +67,9 @@ Speaker 1's script style also works unchanged:
 | `unit_health.py` | crash detection: UI top bar + Controller health and datapath state |
 | `traffic_engine.py` | `TestbedSpec` → checked, recorded run |
 | `testbed_spec.py` | the config block: `TestbedSpec` / `PortSpec` / `StreamSpec` |
-| `wan_emulator_page.py` | WAN emulator: delay helper plus a generic path builder keyed by form field `name` (see `docs/wan-emulator-reference.md`) |
+| `wan_emulator_page.py` | WAN emulator UI: engine state (Emulation, Default Actions), create/delete a path, `applied(spec)` / `path_created(spec)` context managers that always restore the engine (see `docs/wan-emulator-reference.md`) |
+| `wan_path_spec.py` | `WanPathSpec` / `Impairment`: a path's config block, per direction; also checks the box's stored path against it |
+| `wan_bench.py` | `WanBench` (the `wan_bench` fixture): NTG Port 3 → Engine 2 → Port 4. Baseline vs impaired runs, both boxes' counters on the summary sheet, delay checks |
 | `create_TE_testbed_page.py` | Speaker 1's `CreateTestbedPage` API on top of the above |
 | `settings.py`, `errors.py` | `.env` targets; `SystemBadStateError`, `PortsBusyError` |
 

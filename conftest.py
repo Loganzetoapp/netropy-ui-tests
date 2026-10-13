@@ -243,17 +243,32 @@ def dashboard(page: Page) -> Page:
 @pytest.fixture
 def wan_page(browser) -> Page:
     """A logged-in page on the WAN emulator chained between NTG Port 3 and
-    Port 4 (see wan_emulator.py). Its own browser context, so it never
-    shares state with the NTG `page`. Skips when WAN_EMULATOR_URL is unset."""
-    import wan_emulator
+    Port 4 (pages/wan_emulator_page.py). Its own browser context, so it
+    never shares state with the NTG `page`. Skips when WAN_EMULATOR_URL is
+    unset."""
+    from pages.wan_emulator_page import WanEmulatorPage
 
-    if not wan_emulator.WAN_URL:
+    if not _settings.WAN_URL:
         pytest.skip("WAN_EMULATOR_URL not set in .env")
-    context = browser.new_context(base_url=wan_emulator.WAN_URL)
+    context = browser.new_context(base_url=_settings.WAN_URL)
     pg = context.new_page()
-    wan_emulator.login(pg)
+    WanEmulatorPage(pg).login()
     yield pg
     context.close()
+
+
+@pytest.fixture
+def wan_bench(traffic_engine, wan_page: Page, run_metrics, request):
+    """NTG Port 3 -> emulator Engine 2 -> NTG Port 4 as one bench
+    (pages/wan_bench.py). An Engine 2 someone else is using makes the
+    test skip, like busy ports."""
+    from pages.wan_bench import WanBench
+    from pages.wan_emulator_page import WanEmulatorPage
+    from wan_api import WanApi
+
+    return WanBench(traffic_engine, WanEmulatorPage(wan_page),
+                    WanApi(_settings.WAN_URL, _settings.WAN_USER, _settings.WAN_PASS),
+                    run_metrics, request.node.nodeid)
 
 
 @pytest.fixture

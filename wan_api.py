@@ -1,7 +1,7 @@
 """Read-only client for the WAN emulator's API (Netropy 10G2, /api).
 
 Step 1 of docs/wan-integration-plan.md. Tests configure the emulator
-through wan_emulator.py (its UI); this client only READS config, port
+through pages/wan_emulator_page.py (its UI); this client only READS config, port
 state and statistics. Its only POSTs are the two stats RPCs, which the
 emulator's own UI also calls every second. Nothing here changes the box.
 

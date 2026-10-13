@@ -109,7 +109,18 @@ def standard_checks(metrics, label: str, digest: dict, expected_seconds: float =
                           unit="Mbps", enforced=False)
     if expected_seconds:
         metrics.check(f"{label}: run length", expected=expected_seconds,
-                      measured=digest.get("duration-sec"), tolerance=3, unit="s", enforced=False)
+                      measured=_run_length(digest), tolerance=3, unit="s", enforced=False)
+
+
+def _run_length(digest: dict):
+    """Ramp-up + main + ramp-down from the saved run's stages, which is what
+    a spec's run_seconds configures. The saved `duration-sec` counts the
+    main (hold) stage only: 20 for a 2/20/2 ramp."""
+    stages = digest.get("stages") or {}
+    parts = [stages.get(k) for k in ("ramp-up-sec", "main-sec", "ramp-down-sec")]
+    if any(p is None for p in parts):
+        return digest.get("duration-sec")
+    return round(sum(parts), 3)
 
 
 class RunMetrics:
@@ -127,6 +138,14 @@ class RunMetrics:
         run = {"label": label, "ntg": ntg, "wan": wan, "series": series}
         self.record["runs"].append(run)
         return run
+
+    def attach(self, label: str, wan: dict = None, series: dict = None) -> None:
+        """Add emulator data (and its series) to the latest run called `label`."""
+        run = next(r for r in reversed(self.record["runs"]) if r["label"] == label)
+        if wan is not None:
+            run["wan"] = wan
+        if series:
+            run["series"] = {**(run.get("series") or {}), **series}
 
     def check(self, name, expected, measured, tolerance=None, unit="", enforced=True) -> bool:
         """Record expected vs measured. `tolerance` is absolute; None means

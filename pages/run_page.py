@@ -9,6 +9,7 @@ from pages.errors import SystemBadStateError
 # 5.0 can accept Start, look live for a while, then fall back to this with
 # no saved run and no error (seen 4/4 for NTP, 2026-10-01).
 _ARMED_IDLE = re.compile(r"Ports are armed and idle", re.I)
+_LATENCY_MS = re.compile(r"([\d,]+(?:\.\d+)?)\s*ms")
 
 
 class RunPage(BasePage):
@@ -58,6 +59,15 @@ class RunPage(BasePage):
         """The whole row goes in the message, so a FAIL says why."""
         verdict = self.verdict(row)
         assert verdict == "pass", f"run verdict {verdict!r}; saved run row: {row.inner_text()!r}"
+
+    def last_run_avg_latency_ms(self) -> float:
+        """The "Avg Latency" card of the latest saved run (e.g. "0.224 ms"),
+        behind the "Last run #N" button. Call on a Statistics page opened
+        after the run was saved (DashboardPage.open_stats)."""
+        self.page.get_by_role("button", name=re.compile(r"^Last run #")).click()
+        card = self.page.get_by_role("button", name="Avg Latency: open graph")
+        expect(card).to_contain_text(_LATENCY_MS, timeout=20_000)
+        return float(_LATENCY_MS.search(card.inner_text()).group(1).replace(",", ""))
 
     def rows(self):
         return self.page.get_by_role("row").filter(has_text=re.compile(r"^\s*#\d+"))
