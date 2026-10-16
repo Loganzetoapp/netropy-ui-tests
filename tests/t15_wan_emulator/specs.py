@@ -1,7 +1,7 @@
-"""The T15 testbed: one UDP stream each way between NTG Port 3 and Port 4,
-the two ports chained through WAN emulator Engine 2. Every T15 test runs
-this same config, so one baseline (bypass) run serves them all
-(WanBench.baseline).
+"""The WAN bench testbed: one UDP stream each way between NTG Port 3 and
+Port 4, the two ports chained through WAN emulator Engine 2. Every WAN test
+(T15 delay, T16 loss, T17 bandwidth) runs this same config, so one
+baseline (bypass) run serves them all (WanBench.baseline).
 
 500 Mbps per port: the emulator's own port 4 negotiated 1 Gbps
 (netropy-ui-findings.md), so Port 4 can't carry more."""
