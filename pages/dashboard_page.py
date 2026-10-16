@@ -93,10 +93,14 @@ class DashboardPage(BasePage):
 
     @staticmethod
     def port_holders(ports, own_testbed: str = None) -> dict:
-        """{port number: "testbed 'X' (user)"} for each of `ports` held by
-        anyone else's testbed. Read from the Controller's port list
-        (`mine`, `test-name`, `user`), which is exact where the UI's
-        Release button is not (it shows on ports we can't release)."""
+        """{port number: "testbed 'X' (user)"} for each of `ports` that is
+        reserved by anything but `own_testbed`. Read from the Controller's
+        port list (`test-name`, `user`), which is exact where the UI's
+        Release button is not (it shows on ports we can't release).
+
+        `mine` is deliberately ignored: it only means "the same login", and
+        the suite's login is a shared account (2026-10-16: another user's
+        SessionStrike testbed held Ports 3/4 as `mine`)."""
         from ntg_api import NtgApi
 
         api = NtgApi(settings.NTG_URL, settings.NTG_USER, settings.NTG_PASS)
@@ -105,7 +109,7 @@ class DashboardPage(BasePage):
         for row in api.ports():
             if row["port-id"] not in wanted or not row.get("reserved"):
                 continue
-            if row.get("mine") or (own_testbed and row.get("test-name") == own_testbed):
+            if own_testbed and row.get("test-name") == own_testbed:
                 continue
             busy[row["port-id"]] = f"testbed {row.get('test-name')!r} ({row.get('user')})"
         return busy

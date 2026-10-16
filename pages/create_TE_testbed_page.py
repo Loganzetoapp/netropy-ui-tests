@@ -62,12 +62,14 @@ class CreateTestbedPage:
     verify_ports_reserved = ensure_ports_reserved
 
     def release_port(self, port_number_):
-        """Release only a port this account holds."""
+        """Release only a port held by this facade's own testbed. Not
+        `mine`: that means "same login", and the login is shared, so it
+        would release (and deactivate) someone else's testbed."""
         from ntg_api import NtgApi
 
         api = NtgApi(settings.NTG_URL, settings.NTG_USER, settings.NTG_PASS)
         row = next((p for p in api.ports() if p["port-id"] == port_number(port_number_)), None)
-        if not row or not row.get("mine"):
+        if not row or not self.testbed_name or row.get("test-name") != self.testbed_name:
             return
         self.go_home()
         self.dashboard.port_row(port_number_).get_by_role("button", name="Release", exact=True).click()

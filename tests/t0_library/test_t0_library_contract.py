@@ -6,6 +6,8 @@ Hardware-free: each test builds a draft testbed on Ports 1/2 and never
 starts it (a draft reserves nothing), then checks what the unit stored
 through the Controller's read-only /tests API. Run these first.
 """
+import time
+
 import pytest
 from playwright.sync_api import Page, expect
 
@@ -32,8 +34,16 @@ def draft(dashboard: Page):
     board.remove_testbed(NAME)
 
 
-def _stored(api, name):
+def _stored(api, name, ready=lambda cfg: bool(cfg.get("port")), timeout_s=5):
+    """The Controller's stored config once `ready(cfg)` holds, or as it
+    stands after `timeout_s`. It can return the old config for ~0.1 s
+    after Save's PUT has already answered 200 (probe 2026-10-16), so a
+    read straight after save() polls, like a web-first assertion."""
+    deadline = time.monotonic() + timeout_s
     cfg = api.test(name)
+    while not ready(cfg) and time.monotonic() < deadline:
+        time.sleep(0.1)  # poll interval
+        cfg = api.test(name)
     ports = {p["port-id"]: p for p in cfg.get("port", [])}
     return cfg, ports
 
@@ -88,7 +98,7 @@ def test_t0_editor_full_spec_is_stored(dashboard: Page, draft, api):
     board.open_editor(draft)
     engine.configure(spec)
     engine.editor.save()
-    cfg, ports = _stored(api, draft)
+    cfg, ports = _stored(api, draft, ready=lambda c: len(c.get("stream", [])) == 3)
     assert len(cfg.get("stream", [])) == 3, cfg.get("stream")
     assert ports[1].get("rate-mbps") == 1000, ports[1]
     text = repr(cfg)
@@ -120,7 +130,7 @@ def test_t0_editor_gateway_next_hop(dashboard: Page, draft, api):
     ed.add_stream("UDP")
     ed.set_duration(5)
     ed.save()
-    text = repr(api.test(draft))
+    text = repr(_stored(api, draft, ready=lambda c: "40.0.0.9" in repr(c))[0])
     assert "30.20.20.1" in text and "40.0.0.9" in text, text[:800]
 
 
@@ -145,15 +155,20 @@ def test_t0_speaker1_facade_builds_their_config(dashboard: Page, draft, api):
     ))
     tb.load_profile_config(10)
     tb.editor.save()
-    cfg = api.test(draft)
+    cfg, _ = _stored(api, draft, ready=lambda c: len(c.get("stream", [])) >= 2)
     names = [s.get("name") for s in cfg.get("stream", [])]
     assert any("tcp-stream" in str(n) for n in names) and any("udp-stream" in str(n) for n in names), names
 
 
 @pytest.mark.hardware_free
 def test_t0_port_holders_reads_ownership(dashboard: Page):
-    """Ports held by other people's testbeds are reported, never ours."""
+    """Every reserved port is reported busy unless it is held by the
+    caller's own testbed, even when the Controller marks it `mine` (the
+    login is shared, so `mine` can be someone else's run)."""
+    api = NtgApi(settings.NTG_URL, settings.NTG_USER, settings.NTG_PASS)
+    reserved = {p["port-id"]: p.get("test-name") for p in api.ports() if p.get("reserved")}
     busy = DashboardPage(dashboard).port_holders(range(1, 9))
-    assert isinstance(busy, dict)
-    for port, who in busy.items():
-        assert 1 <= port <= 8 and "testbed" in who, busy
+    assert set(busy) == set(reserved), (busy, reserved)
+    for port, holder in reserved.items():
+        if holder:
+            assert port not in DashboardPage.port_holders([port], own_testbed=holder), (port, holder)

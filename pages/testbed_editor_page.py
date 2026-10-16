@@ -252,8 +252,24 @@ class TestbedEditorPage(BasePage):
 
     # --- bottom bar ---------------------------------------------------
     def save(self) -> None:
-        self.save_button.click()
-        expect(self.page.get_by_text("UNSAVED", exact=True)).to_have_count(0, timeout=15_000)
+        """Save, and wait until the Controller has accepted the change.
+
+        Save is enabled exactly while there are unsaved changes, and a click
+        sends PUT /tests/<name>; its response is the end signal. Not the
+        "unsaved" badge: it clears when the PUT is *sent*, and on 5.0.10 its
+        text is "UNSAVED" only through CSS, so matching that text never
+        waited at all (probes 2026-10-16). Even after the 200 the Controller
+        can take ~0.1 s more to return the new config from GET /tests/<name>,
+        so a test reading it straight back should poll."""
+        try:
+            expect(self.save_button).to_be_enabled(timeout=2_000)
+        except AssertionError:
+            return  # nothing to save: the click would send no request
+        with self.page.expect_response(_is_testbed_save, timeout=15_000) as saved:
+            self.save_button.click()
+        response = saved.value
+        assert response.ok, f"Save refused: HTTP {response.status} {response.text()[:300]}"
+        expect(self.save_button).to_be_disabled(timeout=15_000)
 
     def start(self, start_button=None, timeout: int = 90_000) -> None:
         """Click Start, confirm "Testbed is Inactive", and wait for traffic to
@@ -277,3 +293,10 @@ class TestbedEditorPage(BasePage):
             raise AssertionError(
                 f"Traffic never started after Start → Continue. On-screen toasts: {self.toasts()!r}"
             ) from exc
+
+
+def _is_testbed_save(response) -> bool:
+    """The editor's Save: PUT /ctrl/v1/tests/<name> (or the unit-scoped form)."""
+    return response.request.method == "PUT" and bool(
+        re.search(r"/ctrl/v1/(units/[^/]+/)?tests/[^/?]+$", response.url)
+    )
