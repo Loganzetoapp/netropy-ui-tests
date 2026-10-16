@@ -159,3 +159,63 @@ def get_run(run_code: str, history_dir: Path = HISTORY_DIR) -> Optional[dict]:
         if run.get("run_code") == run_code:
             return run
     return None
+
+
+_OUTCOMES = ("pass", "fail", "error", "skip")
+
+
+def _reason(test: dict) -> Optional[str]:
+    """The first line of a test's failure/skip message, trimmed for a list."""
+    message = (test.get("failure_message") or "").strip()
+    return message.splitlines()[0][:200] if message else None
+
+
+def list_sessions(history_dir: Path = HISTORY_DIR) -> list[dict]:
+    """One summary per history file (one pytest session: a dashboard run
+    or a command-line run), newest first, for the Results page. Tests are
+    left out except the ones that didn't pass (their names and first-line
+    reasons), so the list stays small; `session_tests()` has the rest."""
+    sessions = []
+    for run in _load_history(history_dir):
+        tests = run.get("tests", [])
+        counts = {o: 0 for o in _OUTCOMES}
+        for t in tests:
+            counts[t.get("outcome")] = counts.get(t.get("outcome"), 0) + 1
+        sessions.append({
+            "run_id": run.get("run_id"),
+            "run_code": run.get("run_code"),
+            "timestamp": run.get("timestamp", ""),
+            "duration": run.get("duration"),
+            "markers": run.get("markers"),
+            "target": run.get("target"),
+            "target_version": run.get("target_version"),
+            "git_sha": run.get("git_sha"),
+            "git_branch": run.get("git_branch"),
+            "source": "dashboard" if run.get("batch_id") else "command line",
+            "batch_id": run.get("batch_id"),
+            "total": len(tests),
+            "counts": counts,
+            "test_names": [t.get("nodeid", "").split("::")[-1] for t in tests[:3]],
+            "problems": [
+                {"name": t.get("nodeid", "").split("::")[-1], "outcome": t.get("outcome"),
+                 "failure_kind": t.get("failure_kind"), "reason": _reason(t)}
+                for t in tests if t.get("outcome") != "pass"
+            ][:8],
+        })
+    sessions.sort(key=lambda s: s["timestamp"], reverse=True)
+    return sessions
+
+
+def session_tests(run_id: str, history_dir: Path = HISTORY_DIR) -> Optional[list[dict]]:
+    """Every test of one history file (by run_id), for expanding it on the
+    Results page; None for an unknown run_id."""
+    for run in _load_history(history_dir):
+        if run.get("run_id") != run_id:
+            continue
+        return [
+            {"nodeid": t.get("nodeid"), "outcome": t.get("outcome"),
+             "failure_kind": t.get("failure_kind"), "duration": t.get("duration"),
+             "reason": _reason(t), "screenshot": t.get("screenshot"), "trace": t.get("trace")}
+            for t in run.get("tests", [])
+        ]
+    return None

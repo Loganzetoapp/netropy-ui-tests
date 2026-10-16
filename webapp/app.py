@@ -32,7 +32,9 @@ from webapp.known_issues import (
     match_failure,
     parse_confirmed_issues,
 )
-from webapp.persistence import HISTORY_DIR, get_run, list_batches, list_runs_for_nodeid, list_test_runs
+from webapp.persistence import (
+    HISTORY_DIR, get_run, list_batches, list_runs_for_nodeid, list_sessions, list_test_runs, session_tests,
+)
 from webapp.runner import AlreadyRunningError, IterationEvent, TestRunner
 from webapp.targets import list_targets, normalize_target_url
 from webapp.trace_summary import extract_trace_summary
@@ -96,11 +98,13 @@ def get_modules():
 @app.get("/api/catalog")
 def get_catalog():
     groups = discover_groups()
+    rows_by_nodeid = _rows_by_nodeid()
     return {
         "groups": [
             {
                 "id": g.id,
                 "label": g.label,
+                "description": g.description,
                 "run_all_nodeids": g.run_all_nodeids,
                 "files": [
                     {
@@ -113,6 +117,13 @@ def get_catalog():
                                 "name": t.name,
                                 "markers": t.markers,
                                 "safety_marker": t.safety_marker,
+                                "description": t.description,
+                                "full_description": t.full_description,
+                                "param_count": t.param_count,
+                                "uses_wan": t.uses_wan,
+                                "last_result": _last_result(
+                                    _rows_for_catalog_nodeid(t.nodeid, rows_by_nodeid)
+                                ),
                             }
                             for t in f.tests
                         ],
@@ -122,6 +133,30 @@ def get_catalog():
             }
             for g in groups
         ]
+    }
+
+
+_OUTCOME_RANK = {"error": 3, "fail": 2, "pass": 1}
+
+
+def _last_result(rows: list[dict]) -> Optional[dict]:
+    """The last time a test ran: every case of it (each parametrize id)
+    in the newest pytest session that included it, folded into one
+    outcome. A failing or erroring case wins over passing ones; a session
+    of only skips reads "skip". None when the test has never run.
+    `rows` are newest-first (see _rows_for_catalog_nodeid)."""
+    if not rows:
+        return None
+    newest = rows[0]
+    session = [r for r in rows if r["run_id"] == newest["run_id"]]
+    worst = max(session, key=lambda r: _OUTCOME_RANK.get(r["outcome"], 0))
+    return {
+        "outcome": worst["outcome"],
+        "failure_kind": worst.get("failure_kind"),
+        "run_code": newest["run_code"],
+        "timestamp": newest["timestamp"],
+        "cases": len(session),
+        "passed": sum(1 for r in session if r["outcome"] == "pass"),
     }
 
 
@@ -179,6 +214,21 @@ def stream_run(batch_id: str):
             yield _sse_format(event)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.get("/api/history")
+def get_history():
+    """Every run (dashboard and command line), newest first: the Results
+    page's list. Each run's tests load on demand from /api/history/{run_id}."""
+    return {"sessions": list_sessions(HISTORY_DIR)}
+
+
+@app.get("/api/history/{run_id}")
+def get_history_session(run_id: str):
+    tests = session_tests(run_id, HISTORY_DIR)
+    if tests is None:
+        raise HTTPException(404, f"Unknown run: {run_id}")
+    return {"run_id": run_id, "tests": tests}
 
 
 @app.get("/api/results")

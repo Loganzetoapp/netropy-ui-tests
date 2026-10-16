@@ -1,6 +1,12 @@
 // selectedTests: nodeid -> safety_marker, so "Run selected" can compute a
 // stateful-count warning without a second lookup against state.catalog.
-const state = { catalog: null, liveStatus: {}, batchRunning: false, selectedTests: new Map() };
+// livePill: nodeid -> {text, cls, dot, done, runCode}, see setLiveStatus.
+// testsView: what the Tests tab shows (area cards, one area, or matches).
+const state = {
+  catalog: null, liveStatus: {}, livePill: {}, batchRunning: false, selectedTests: new Map(),
+  testsView: { area: null, query: "", filter: "all" },
+  areaLabels: {}, // area id -> "T17 — WAN Bandwidth", for Back's label
+};
 
 // Dark mode toggle. The initial theme (if any was stored) is already
 // applied by an inline <head> script before first paint — this just
@@ -81,6 +87,40 @@ function selectModule(module, btn) {
   renderTrafficGenerator(panel);
 }
 
+// --- Tests tab: area cards -> one area's runnable list -----------------------
+//
+// Default view: one card per tests/ area (same grid as Overview), in
+// T-number order, each test's last result shown as a dot. A card opens
+// #tests/<area>, that area's runnable rows. Typing a search, or picking a
+// filter other than "All", switches to a flat list of matches across every
+// area, so finding a test never requires knowing its area.
+
+const TEST_FILTERS = [
+  { id: "all", label: "All", match: () => true },
+  { id: "safe", label: "Safe", match: (t) => t.safety_marker !== "stateful" },
+  { id: "traffic", label: "Generates traffic", match: (t) => t.safety_marker === "stateful" },
+  { id: "wan", label: "WAN emulator", match: (t) => t.uses_wan },
+  { id: "failing", label: "Failing", match: (t) => isFailing(t.last_result) },
+  { id: "never", label: "Never run", match: (t) => !t.last_result },
+];
+
+function isFailing(last) {
+  return !!last && (last.outcome === "fail" || last.outcome === "error");
+}
+
+// Every test in a group, each with its file (a row needs both).
+function groupEntries(group) {
+  return group.files.flatMap((file) => file.tests.map((test) => ({ test, file })));
+}
+
+function matchesQuery({ test, file }, group, q) {
+  if (!q) return true;
+  return [
+    test.name, test.nodeid, test.description, test.full_description,
+    file.short_description, file.full_description, group.label, group.description,
+  ].join(" ").toLowerCase().includes(q);
+}
+
 async function renderTrafficGenerator(panel) {
   panel.innerHTML = "<p>Loading tests…</p>";
   // A fresh catalog render always starts from a clean slate — checkboxes
@@ -91,9 +131,15 @@ async function renderTrafficGenerator(panel) {
   try {
     const { groups } = await fetchJSON("/api/catalog");
     state.catalog = groups;
+    groups.forEach((g) => { state.areaLabels[g.id] = g.label; });
+    updateBackButton();
     panel.innerHTML = `
       <div class="filter-field">
-        <input type="text" id="tests-filter" class="filter-input" placeholder="Search tests…" aria-label="Search tests">
+        <input type="search" id="tests-filter" class="filter-input" placeholder="Search all tests…"
+          aria-label="Search all tests" value="${escapeAttr(state.testsView.query)}">
+      </div>
+      <div class="filter-chips" role="group" aria-label="Show only">
+        ${TEST_FILTERS.map(renderFilterChip).join("")}
       </div>
       <div id="selection-bar" class="selection-bar" hidden>
         <span id="selection-count"></span>
@@ -102,69 +148,181 @@ async function renderTrafficGenerator(panel) {
           <button type="button" class="btn-primary" id="selection-run">Run selected</button>
         </div>
       </div>
-      <p id="tests-filter-empty" class="test-desc" hidden>No tests match.</p>
-      ${groups.map(renderGroup).join("")}`;
-    attachTestRowHandlers();
-    attachTestsFilter();
+      <div id="tests-body"></div>`;
+    attachTestsToolbar();
+    renderTestsBody();
   } catch (err) {
     panel.innerHTML = `<p class="test-desc">Couldn't load tests: ${escapeHtml(err.message)}</p>`;
   }
 }
 
-// Client-side filter for the Tests tab — matches test name, nodeid, and
-// short/full description against the query (case-insensitive substring).
-// Toggles [hidden] on non-matching rows rather than re-rendering the DOM
-// tree, and hides a whole group section when none of its rows remain
-// visible (a "T5 — Ports" header with nothing under it reads as broken).
-function attachTestsFilter() {
+function renderFilterChip(filter) {
+  const count = state.catalog.flatMap(groupEntries).filter(({ test }) => filter.match(test)).length;
+  const active = state.testsView.filter === filter.id;
+  return `<button type="button" class="chip${active ? " active" : ""}" aria-pressed="${active}"
+    data-filter="${filter.id}">${filter.label} <span class="chip-count">${count}</span></button>`;
+}
+
+// Toolbar controls live outside #tests-body, so they're wired once per
+// Tests-tab render; the body re-renders on every search keystroke.
+function attachTestsToolbar() {
   const input = document.getElementById("tests-filter");
-  const emptyMsg = document.getElementById("tests-filter-empty");
-  if (!input) return;
   input.addEventListener("input", () => {
-    const q = input.value.trim().toLowerCase();
-    let anyVisible = false;
-    document.querySelectorAll(".group").forEach((group) => {
-      let groupHasVisible = false;
-      group.querySelectorAll(".test-row").forEach((row) => {
-        const name = row.querySelector(".test-name")?.textContent || "";
-        const shortDesc = row.querySelector(".test-desc")?.textContent || "";
-        const nodeid = row.dataset.nodeid || "";
-        const fullDesc = row.dataset.fullDescription || "";
-        const haystack = `${name} ${nodeid} ${shortDesc} ${fullDesc}`.toLowerCase();
-        const match = !q || haystack.includes(q);
-        row.hidden = !match;
-        if (match) groupHasVisible = true;
-      });
-      group.hidden = !groupHasVisible;
-      if (groupHasVisible) anyVisible = true;
+    state.testsView.query = input.value;
+    renderTestsBody();
+  });
+  document.querySelectorAll(".filter-chips .chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      state.testsView.filter = chip.dataset.filter;
+      syncTestsToolbar();
+      renderTestsBody();
     });
-    emptyMsg.hidden = anyVisible;
+  });
+  document.getElementById("selection-clear").addEventListener("click", clearTestSelection);
+  document.getElementById("selection-run").addEventListener("click", () => {
+    const nodeids = Array.from(state.selectedTests.keys());
+    const statefulCount = Array.from(state.selectedTests.values()).filter(
+      (marker) => marker === "stateful"
+    ).length;
+    openRunSelectedModal(nodeids, statefulCount, document.getElementById("selection-run"));
   });
 }
 
-function renderGroup(group) {
-  // Same source of truth safetyPill/renderTestRow use for each row's
-  // "Generates traffic" pill — reused here so "Run all" and the
-  // per-test pills can never disagree about which tests are stateful.
-  const allTests = group.files.flatMap((f) => f.tests);
-  const statefulCount = allTests.filter((t) => t.safety_marker === "stateful").length;
+function syncTestsToolbar() {
+  const input = document.getElementById("tests-filter");
+  if (input && input.value !== state.testsView.query) input.value = state.testsView.query;
+  document.querySelectorAll(".filter-chips .chip").forEach((chip) => {
+    const on = chip.dataset.filter === state.testsView.filter;
+    chip.classList.toggle("active", on);
+    chip.setAttribute("aria-pressed", String(on));
+  });
+}
+
+function renderTestsBody() {
+  const body = document.getElementById("tests-body");
+  if (!body || !state.catalog) return;
+  const { query, filter, area } = state.testsView;
+  const q = query.trim().toLowerCase();
+  const match = (TEST_FILTERS.find((f) => f.id === filter) || TEST_FILTERS[0]).match;
+  if (q || filter !== "all") {
+    const sections = state.catalog
+      .map((group) => ({
+        group,
+        entries: groupEntries(group).filter((e) => match(e.test) && matchesQuery(e, group, q)),
+      }))
+      .filter((s) => s.entries.length);
+    const total = sections.reduce((n, s) => n + s.entries.length, 0);
+    body.innerHTML = total
+      ? `<p class="tests-result-count">${total} test${total === 1 ? "" : "s"} match</p>
+         ${sections.map((s) => renderGroup(s.group, s.entries, true)).join("")}`
+      : `<p class="test-desc">No tests match.</p>`;
+  } else if (area) {
+    const group = state.catalog.find((g) => g.id === area);
+    body.innerHTML = group
+      ? renderAreaTests(group)
+      : `<div class="breadcrumb-row"><a href="#tests">← All areas</a></div>
+         <p class="test-desc">No test area "${escapeHtml(area)}".</p>`;
+  } else {
+    body.innerHTML = `<div class="overview-grid">${state.catalog.map(renderTestAreaCard).join("")}</div>`;
+  }
+  attachTestsBodyHandlers(body);
+  Object.keys(state.livePill).forEach(applyLiveStatus);
+}
+
+// --- Area cards ------------------------------------------------------------
+
+const DOT_CLASS = { pass: "dot-pass", fail: "dot-fail", error: "dot-fail", skip: "dot-skip" };
+
+function renderResultDot(test) {
+  const last = test.last_result;
+  const cls = last ? DOT_CLASS[last.outcome] || "dot-skip" : "dot-never";
+  const what = last
+    ? `${last.outcome}${last.cases > 1 ? `, ${last.passed}/${last.cases} cases passed` : ""} (${last.run_code || "unlinked run"})`
+    : "never run";
+  return `<span class="result-dot ${cls}" data-dot-for="${escapeAttr(test.nodeid)}"
+    title="${escapeAttr(`${test.name}: ${what}`)}"></span>`;
+}
+
+// Same card shape as Overview's, but its job is "what's in here and can I
+// run it": counts, hardware needs, last results. The title is a real link
+// (keyboard/AT reach it like any link); a click anywhere else on the card
+// that isn't the Run all button does the same.
+function renderTestAreaCard(group) {
+  const tests = groupEntries(group).map((e) => e.test);
+  const safe = tests.filter((t) => t.safety_marker !== "stateful").length;
+  const traffic = tests.length - safe;
+  const cases = tests.reduce((n, t) => n + (t.param_count || 1), 0);
+  const passing = tests.filter((t) => t.last_result && t.last_result.outcome === "pass").length;
+  const failing = tests.filter((t) => isFailing(t.last_result)).length;
+  const never = tests.filter((t) => !t.last_result).length;
+  const skipped = tests.length - passing - failing - never;
+  const summary = [
+    passing && `${passing} passing`,
+    failing && `${failing} failing`,
+    skipped && `${skipped} skipped`,
+    never && `${never} never run`,
+  ].filter(Boolean).join(" · ");
   const groupName = group.label.split(" — ")[0];
-  const rows = group.files
-    .flatMap((f) => f.tests.map((t) => renderTestRow(t, f)))
-    .join("");
   return `
-    <section class="group" data-group-id="${group.id}">
-      <div class="group-header">
-        <h2>${group.label}</h2>
-        <button type="button" class="btn-outline run-all-btn"
-          data-nodeids='${JSON.stringify(group.run_all_nodeids)}'
-          data-stateful-count="${statefulCount}"
-          data-group-name="${escapeAttr(groupName)}">
-          Run all in ${groupName}
-        </button>
+    <div class="card area-card test-area-card" data-area-id="${escapeAttr(group.id)}">
+      <div class="area-card-header">
+        <h3><a class="area-card-link" href="#tests/${encodeURIComponent(group.id)}">${escapeHtml(group.label)}</a></h3>
+        <span class="area-card-count">${tests.length} test${tests.length === 1 ? "" : "s"}${
+          cases > tests.length ? ` · ${cases} cases` : ""}</span>
       </div>
-      ${rows}
+      ${group.description ? `<p class="area-card-desc">${escapeHtml(group.description)}</p>` : ""}
+      <div class="area-card-row">
+        ${safe ? `<span class="pill pill-ok">${safe} safe</span>` : ""}
+        ${traffic ? `<span class="pill pill-warn">${traffic} traffic</span>` : ""}
+        ${tests.some((t) => t.uses_wan) ? `<span class="pill pill-wan">WAN emulator</span>` : ""}
+      </div>
+      <div class="result-dots" aria-hidden="true">${tests.map(renderResultDot).join("")}</div>
+      <div class="area-card-foot">
+        <span class="test-desc">${summary}</span>
+        ${runAllButton(tests.map((t) => t.nodeid), traffic, groupName, "Run all")}
+      </div>
+    </div>`;
+}
+
+// --- One area / search results -------------------------------------------
+
+function renderAreaTests(group) {
+  return `
+    <div class="breadcrumb-row breadcrumb-split">
+      <a href="#tests">← All areas</a>
+      <a href="#area/${encodeURIComponent(group.id)}">History &amp; known issues →</a>
+    </div>
+    ${group.description ? `<p class="area-intro">${escapeHtml(group.description)}</p>` : ""}
+    ${renderGroup(group, groupEntries(group), false)}`;
+}
+
+// `entries` may be a subset (search results), and Run all runs exactly
+// what's listed, so it's labelled that way rather than "Run all in T5".
+function renderGroup(group, entries, linkTitle) {
+  const nodeids = entries.map((e) => e.test.nodeid);
+  const statefulCount = entries.filter((e) => e.test.safety_marker === "stateful").length;
+  const groupName = group.label.split(" — ")[0];
+  const subset = entries.length < groupEntries(group).length;
+  const title = linkTitle
+    ? `<a href="#tests/${encodeURIComponent(group.id)}">${escapeHtml(group.label)}</a>`
+    : escapeHtml(group.label);
+  return `
+    <section class="group" data-group-id="${escapeAttr(group.id)}">
+      <div class="group-header">
+        <h2>${title}</h2>
+        ${subset
+          ? runAllButton(nodeids, statefulCount, `${groupName} (${entries.length} shown)`, `Run these ${entries.length}`)
+          : runAllButton(nodeids, statefulCount, groupName, `Run all in ${groupName}`)}
+      </div>
+      ${entries.map((e) => renderTestRow(e.test, e.file)).join("")}
     </section>`;
+}
+
+function runAllButton(nodeids, statefulCount, groupName, label) {
+  return `<button type="button" class="btn-outline run-all-btn"
+    data-nodeids="${escapeAttr(JSON.stringify(nodeids))}"
+    data-stateful-count="${statefulCount}"
+    data-group-name="${escapeAttr(groupName)}">${escapeHtml(label)}</button>`;
 }
 
 function safetyPill(marker) {
@@ -172,26 +330,48 @@ function safetyPill(marker) {
   return `<span class="pill pill-ok">Safe</span>`;
 }
 
+function renderLastResult(last) {
+  if (!last) return `<span class="last-result muted-cell">never run</span>`;
+  const cases = last.cases > 1 ? `<span class="muted-cell">${last.passed}/${last.cases}</span>` : "";
+  const code = last.run_code
+    ? `<a href="#run/${encodeURIComponent(last.run_code)}">${escapeHtml(last.run_code)}</a>`
+    : "";
+  return `<span class="last-result">${outcomePill(last.outcome, last.failure_kind)}${cases}${code}</span>`;
+}
+
 function renderTestRow(test, file) {
+  // A test's own docstring says what it checks; tests without one fall
+  // back to their file's (several tests can share a file).
+  const desc = test.description || file.short_description;
+  const fullDesc = [test.full_description, file.full_description].filter(Boolean).join("\n\n");
+  const cases = test.param_count
+    ? `<span class="pill pill-muted">${test.param_count} cases</span>`
+    : test.param_count === 0 ? `<span class="pill pill-muted">parametrized</span>` : "";
+  const checked = state.selectedTests.has(test.nodeid) ? " checked" : "";
   return `
-    <div class="test-row" data-nodeid="${test.nodeid}" data-full-description="${escapeAttr(file.full_description)}">
+    <div class="test-row" data-nodeid="${escapeAttr(test.nodeid)}" data-full-description="${escapeAttr(fullDesc)}">
       <div class="test-row-main">
-        <input type="checkbox" class="test-select" data-nodeid="${test.nodeid}" data-marker="${test.safety_marker}" aria-label="Select ${escapeAttr(test.name)}">
-        <div>
-          <div class="test-name">${test.name}</div>
-          <div class="test-desc">${file.short_description}</div>
+        <input type="checkbox" class="test-select" data-nodeid="${escapeAttr(test.nodeid)}"
+          data-marker="${test.safety_marker}" aria-label="Select ${escapeAttr(test.name)}"${checked}>
+        <div class="test-row-text">
+          <div class="test-name">${escapeHtml(test.name)}</div>
+          <div class="test-desc">${escapeHtml(desc)}</div>
         </div>
       </div>
       <div class="test-row-actions">
-        <span class="pill" data-status-for="${test.nodeid}"></span>
+        ${renderLastResult(test.last_result)}
+        <span class="pill" data-status-for="${escapeAttr(test.nodeid)}"></span>
+        ${cases}
+        ${test.uses_wan ? `<span class="pill pill-wan">WAN</span>` : ""}
         ${safetyPill(test.safety_marker)}
-        <button type="button" class="btn-primary run-btn" data-nodeid="${test.nodeid}" data-marker="${test.safety_marker}">Run</button>
+        <button type="button" class="btn-primary run-btn" data-nodeid="${escapeAttr(test.nodeid)}"
+          data-marker="${test.safety_marker}">Run</button>
       </div>
     </div>`;
 }
 
 function escapeAttr(s) {
-  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 // History (and therefore the run-detail page) records the nodeid
@@ -214,25 +394,32 @@ function escapeHtml(s) {
     .replace(/>/g, "&gt;");
 }
 
-function attachTestRowHandlers() {
-  document.querySelectorAll(".test-row").forEach((row) => {
+function attachTestsBodyHandlers(body) {
+  body.querySelectorAll(".test-area-card").forEach((card) => {
+    card.addEventListener("click", (e) => {
+      if (e.target.closest("a, button")) return; // the title link and Run all handle themselves
+      location.hash = `tests/${encodeURIComponent(card.dataset.areaId)}`;
+    });
+  });
+  body.querySelectorAll(".test-row").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if (e.target.closest(".run-btn") || e.target.closest(".test-select")) return;
+      if (e.target.closest(".run-btn, .test-select, a")) return;
       toggleDetail(row);
     });
   });
-  document.querySelectorAll(".run-btn").forEach((btn) => {
+  body.querySelectorAll(".run-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       openRunModal(btn.dataset.nodeid, btn.dataset.marker, btn);
     });
   });
-  document.querySelectorAll(".run-all-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
+  body.querySelectorAll(".run-all-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
       const nodeids = JSON.parse(btn.dataset.nodeids);
       const statefulCount = parseInt(btn.dataset.statefulCount, 10) || 0;
       if (statefulCount > 0) {
-        // At least one stateful test in this group — same hazard as the
+        // At least one stateful test in this set — same hazard as the
         // single-test Run modal's warning, just naming the group instead
         // of one nodeid. Block on confirmation before anything runs.
         openRunAllModal(nodeids, btn.dataset.groupName, statefulCount, btn);
@@ -242,25 +429,13 @@ function attachTestRowHandlers() {
       }
     });
   });
-  document.querySelectorAll(".test-select").forEach((cb) => {
+  body.querySelectorAll(".test-select").forEach((cb) => {
     cb.addEventListener("change", () => {
       const nodeid = cb.dataset.nodeid;
       if (cb.checked) state.selectedTests.set(nodeid, cb.dataset.marker);
       else state.selectedTests.delete(nodeid);
       updateSelectionBar();
     });
-  });
-  document.getElementById("selection-clear")?.addEventListener("click", () => {
-    state.selectedTests.clear();
-    document.querySelectorAll(".test-select").forEach((cb) => (cb.checked = false));
-    updateSelectionBar();
-  });
-  document.getElementById("selection-run")?.addEventListener("click", () => {
-    const nodeids = Array.from(state.selectedTests.keys());
-    const statefulCount = Array.from(state.selectedTests.values()).filter(
-      (marker) => marker === "stateful"
-    ).length;
-    openRunSelectedModal(nodeids, statefulCount, document.getElementById("selection-run"));
   });
   // A batch may already be running (e.g. the user switched tabs and back
   // mid-run) — newly attached buttons need to reflect that immediately.
@@ -299,6 +474,50 @@ function toggleDetail(row) {
   panel.className = "detail-panel";
   panel.textContent = row.dataset.fullDescription;
   row.after(panel);
+}
+
+// --- Live run status ---------------------------------------------------------
+//
+// Kept per test in state, not only in whichever row was on screen when the
+// run started, so it survives moving between the cards, an area and a
+// search, and shows on both the row pill and the card dot.
+
+function setLiveStatus(nodeid, patch) {
+  state.livePill[nodeid] = { ...(state.livePill[nodeid] || {}), ...patch };
+  applyLiveStatus(nodeid);
+}
+
+function applyLiveStatus(nodeid) {
+  const live = state.livePill[nodeid];
+  if (!live) return;
+  const sel = CSS.escape(nodeid);
+  document.querySelectorAll(`[data-status-for="${sel}"]`).forEach((el) => {
+    el.textContent = live.text;
+    el.className = `pill ${live.cls}`;
+    // The "View summary →" link sits next to the pill once the batch is
+    // done; a re-run must not leave the previous run's link up.
+    const actions = el.closest(".test-row-actions");
+    if (!actions) return;
+    const stale = actions.querySelector(".view-summary-link");
+    if (stale) stale.remove();
+    if (live.done && live.runCode) {
+      const link = document.createElement("a");
+      link.href = `#run/${encodeURIComponent(live.runCode)}`;
+      link.className = "view-summary-link";
+      link.textContent = "View summary →";
+      actions.appendChild(link);
+    }
+  });
+  document.querySelectorAll(`[data-dot-for="${sel}"]`).forEach((dot) => {
+    dot.className = `result-dot ${live.dot}`;
+  });
+}
+
+function dotForStatus(status) {
+  if (status === "passed") return "dot-pass";
+  if (status === "failed" || status === "error") return "dot-fail";
+  if (status === "running") return "dot-running";
+  return "dot-skip";
 }
 
 // modalMode distinguishes the three things this one modal now confirms:
@@ -543,7 +762,17 @@ document.getElementById("run-modal-confirm").addEventListener("click", async () 
   const count = Number.isFinite(raw) && raw > 0 ? raw : 1;
   const nodeid = modalNodeid;
   closeRunModal();
-  if (!alreadyOnTests) await showPage("tests");
+  if (!alreadyOnTests) {
+    // e.g. "Run again" on a run page: land on the test's own area so its
+    // row (live pill, "View summary") is on screen. replaceState, not a
+    // hash assignment: a hashchange would re-render under the run below.
+    const area = nodeid.split("/")[1] || null;
+    state.testsView = { area, query: "", filter: "all" };
+    history.replaceState(null, "", area ? `#tests/${encodeURIComponent(area)}` : "#tests");
+    navStack[navStack.length - 1] = location.hash;
+    updateBackButton();
+    await showPage("tests");
+  }
   await startRun(nodeid, count, headed);
 });
 
@@ -583,28 +812,15 @@ function setRunControlsEnabled(enabled) {
 }
 
 function streamRun(batchId, nodeid) {
-  const el = document.querySelector(`[data-status-for="${nodeid}"]`);
-  // The "View summary →" link (added once a run_code is known, see the
-  // batch_complete handler below) lives next to the status pill, inside
-  // the same actions container the pill and Run button already share.
-  const actionsEl = el ? el.closest(".test-row-actions") : null;
   let lastRunCode = null;
   state.liveStatus[nodeid] = "running";
   state.batchRunning = true;
   setRunControlsEnabled(false);
-  // A re-run of the same row must not leave a stale link pointing at the
-  // previous run_code visible while this new run is in flight.
-  if (actionsEl) {
-    const stale = actionsEl.querySelector(".view-summary-link");
-    if (stale) stale.remove();
-  }
   // Reflect "running" the instant the batch is confirmed started, rather
   // than waiting on the first SSE round-trip (pytest collection can take
-  // a beat before the first iteration event arrives).
-  if (el) {
-    el.textContent = "running";
-    el.className = "pill pill-warn";
-  }
+  // a beat before the first iteration event arrives). Clearing runCode
+  // also takes down a previous run's "View summary" link.
+  setLiveStatus(nodeid, { text: "running", cls: "pill-warn", dot: "dot-running", done: false, runCode: null });
   const source = new EventSource(`/api/runs/${batchId}/stream`);
   const finish = () => {
     state.batchRunning = false;
@@ -614,23 +830,17 @@ function streamRun(batchId, nodeid) {
     const payload = JSON.parse(e.data);
     if (payload.type === "iteration") {
       if (payload.run_code) lastRunCode = payload.run_code;
-      if (el) {
-        el.textContent = `${payload.status} (${payload.iteration}/${payload.total})`;
-        el.className = "pill " + statusPillClass(payload.status);
-      }
+      setLiveStatus(nodeid, {
+        text: `${payload.status} (${payload.iteration}/${payload.total})`,
+        cls: statusPillClass(payload.status),
+        dot: dotForStatus(payload.status),
+      });
     } else if (payload.type === "batch_complete") {
       state.liveStatus[nodeid] = "done";
-      if (el) el.textContent = `${payload.passed}/${payload.total} passed`;
       // lastRunCode is the most recent iteration's code — for the common
       // repeat_count=1 case that's the only run; for a repeat run it's
       // the last one, which is what "View summary" should point at.
-      if (actionsEl && lastRunCode) {
-        const link = document.createElement("a");
-        link.href = `#run/${encodeURIComponent(lastRunCode)}`;
-        link.className = "view-summary-link";
-        link.textContent = "View summary →";
-        actionsEl.appendChild(link);
-      }
+      setLiveStatus(nodeid, { text: `${payload.passed}/${payload.total} passed`, done: true, runCode: lastRunCode });
       source.close();
       finish();
     }
@@ -677,9 +887,27 @@ async function runSelectedTests(nodeids, repeatCount, headed = false) {
   return runNodeidsSequentially(nodeids, repeatCount, headed, "Run selected");
 }
 
-document.getElementById("nav-tests").addEventListener("click", () => showPage("tests"));
-document.getElementById("nav-results").addEventListener("click", () => showPage("results"));
-document.getElementById("nav-findings").addEventListener("click", () => showPage("findings"));
+// Tests, like Overview, is hash-addressable (#tests, #tests/<area>) so an
+// area can be linked to and Back works between cards and an area.
+function goToTests() {
+  if (location.hash === "#tests") {
+    openTestsView(null);
+  } else {
+    location.hash = "tests";
+  }
+}
+document.getElementById("nav-tests").addEventListener("click", goToTests);
+// Results and Findings are hash routes too, so every page is a browser
+// history entry and Back (the button, or the browser's) steps through them.
+function goToPage(name) {
+  if (location.hash === `#${name}`) {
+    showPage(name);
+  } else {
+    location.hash = name;
+  }
+}
+document.getElementById("nav-results").addEventListener("click", () => goToPage("results"));
+document.getElementById("nav-findings").addEventListener("click", () => goToPage("findings"));
 // Overview is the one page-nav tab that's also address-bar-linkable (see
 // the routing block near the bottom of this file). Setting the hash (when
 // it actually changes) lets the hashchange listener drive the render, so
@@ -733,6 +961,8 @@ function outcomePillClass(outcome) {
   // ("passed"/"failed"/"error"/"running").
   if (outcome === "pass" || outcome === "passed") return "pill-ok";
   if (outcome === "fail" || outcome === "failed" || outcome === "error") return "pill-bad";
+  // A skip didn't run (e.g. the bench was busy): neutral, not a warning.
+  if (outcome === "skip" || outcome === "skipped") return "pill-muted";
   return "pill-warn";
 }
 
@@ -782,6 +1012,8 @@ async function renderOverview(panel) {
   panel.innerHTML = "<p>Loading overview…</p>";
   try {
     const { areas } = await fetchJSON("/api/overview");
+    areas.forEach((a) => { state.areaLabels[a.id] = a.label; });
+    updateBackButton();
     panel.innerHTML = `<div class="overview-grid">${areas.map(renderAreaCard).join("")}</div>`;
     attachAreaCardHandlers(panel);
   } catch (err) {
@@ -870,6 +1102,10 @@ document.addEventListener("click", (e) => {
   if (!btn) return;
   e.preventDefault();
   const issueTitle = btn.dataset.issueTitle;
+  // pushState, not a hash assignment: the hashchange render would race
+  // the scroll below. Recorded by hand for the same reason.
+  history.pushState(null, "", "#findings");
+  recordNavigation();
   showPage("findings").then(() => {
     if (!issueTitle) return;
     scrollToFindingsHeading(issueTitle);
@@ -995,7 +1231,9 @@ function renderAreaDetailContent(area) {
     : `<p class="test-desc">No tests found in this area's catalog.</p>`;
 
   return `
-    <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
+    <div class="breadcrumb-row breadcrumb-end">
+      <a href="#tests/${encodeURIComponent(area.id)}">Run these tests →</a>
+    </div>
     <div class="card run-header">
       <div class="run-header-top">
         <h2>${escapeHtml(area.label)}</h2>
@@ -1042,7 +1280,6 @@ async function renderAreaDetail(panel, areaId) {
     // failure alike — same not-found-with-a-way-back pattern as
     // renderRunDetail's catch block.
     panel.innerHTML = `
-      <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
       <div class="card run-not-found">
         <h2>Area not found</h2>
         <p class="test-desc">${escapeHtml(err.message)}</p>
@@ -1096,6 +1333,7 @@ function fmtNum(v, digits = 0) {
 }
 
 function fmtCheckValue(v, unit) {
+  if (typeof v === "string") return escapeHtml(v); // e.g. a verdict: "pass" / "fail"
   const digits = unit === "frames" ? 0 : unit === "Mbps" ? 1 : 3;
   return `${fmtNum(v, digits)}${unit && unit !== "frames" ? ` ${escapeHtml(unit)}` : ""}`;
 }
@@ -1169,13 +1407,15 @@ function renderWitnessTable(run) {
       const dropped = emu.wan
         ? (emu.wan.drops || 0) + (emu.inflow && emu.inflow.queue ? emu.inflow.queue.drops || 0 : 0)
         : null;
-      const agrees = typeof carried === "number" && Math.abs(carried - d.tx) <= d.tx * FRAME_AGREEMENT;
+      // The emulator's `frames` are frames it delivered: they match what
+      // the NTG received (its drops are the difference to what was sent).
+      const agrees = typeof carried === "number" && Math.abs(carried - d.rx) <= Math.max(d.rx * FRAME_AGREEMENT, 10);
       const agreeCell =
         typeof carried !== "number"
           ? `<span class="muted-cell">—</span>`
           : agrees
             ? `<span class="pill pill-ok">✓ match</span>`
-            : `<span class="pill pill-bad">✗ off by ${fmtNum(carried - d.tx)}</span>`;
+            : `<span class="pill pill-bad">✗ off by ${fmtNum(carried - d.rx)}</span>`;
       return `<tr class="${typeof carried === "number" && !agrees ? "row-bad" : ""}">
         <td>Port ${escapeHtml(String(d.from))} → ${escapeHtml(String(d.to))}</td>
         <td class="num">${fmtNum(d.tx)}</td>
@@ -1192,7 +1432,7 @@ function renderWitnessTable(run) {
     <table class="metrics-table">
       <thead><tr><th>Direction</th><th class="num">NTG sent</th><th class="num">NTG received</th>
         <th class="num">NTG lost</th><th class="num">NTG avg latency</th>
-        <th class="num">Emulator carried</th><th class="num">Emulator dropped</th><th>Counts agree</th></tr></thead>
+        <th class="num">Emulator delivered</th><th class="num">Emulator dropped</th><th>Counts agree</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
 }
@@ -1687,7 +1927,6 @@ function renderRunDetailContent(run) {
     .map(([nodeid, rows]) => renderSiblingRuns(nodeid, rows))
     .join("");
   return `
-    <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
     <div class="card run-header">
       <div class="run-header-top">
         <h2>${escapeHtml(run.run_code || run.run_id)}</h2>
@@ -1728,7 +1967,6 @@ async function renderRunDetail(panel, runCode) {
     // never render broken, just a plain not-found-style state with a way
     // back out.
     panel.innerHTML = `
-      <div class="breadcrumb-row"><a href="#overview">← Overview</a></div>
       <div class="card run-not-found">
         <h2>Run not found</h2>
         <p class="test-desc">${escapeHtml(err.message)}</p>
@@ -1745,13 +1983,73 @@ function showRunDetailPage(runCode) {
   renderRunDetail(document.getElementById("module-panel"), runCode);
 }
 
+// --- Back navigation ---------------------------------------------------------
+//
+// Every page is a hash route, so the browser's history is the app's. navStack
+// mirrors the part of it made inside the dashboard: while it has an earlier
+// page, Back is history.back() (one step, to wherever you came from). A page
+// opened directly (a shared link, a reload) has none, so Back goes to its
+// parent instead: Results for a run, Overview for an area, the cards for a
+// test area. No parent and no history: no Back button.
+const navStack = [location.hash || "#tests"];
+
+function recordNavigation() {
+  const hash = location.hash || "#tests";
+  if (navStack.length > 1 && navStack[navStack.length - 2] === hash) {
+    navStack.pop();               // a browser/Back step to the previous page
+  } else if (navStack[navStack.length - 1] !== hash) {
+    navStack.push(hash);
+  }
+  updateBackButton();
+}
+
+function parentOf(hash) {
+  if (/^#run\//.test(hash)) return "#results";
+  if (/^#area\//.test(hash)) return "#overview";
+  if (/^#tests\/./.test(hash)) return "#tests";
+  return null;
+}
+
+function pageLabel(hash) {
+  const route = hash.slice(1);
+  if (!route || route === "tests") return "Tests";
+  const area = (id) => state.areaLabels[id] || id;
+  if (route.startsWith("tests/")) return `${area(decodeURIComponent(route.slice(6)))} tests`;
+  if (route.startsWith("run/")) return decodeURIComponent(route.slice(4));
+  if (route.startsWith("area/")) return area(decodeURIComponent(route.slice(5)));
+  return route.charAt(0).toUpperCase() + route.slice(1);
+}
+
+function backTarget() {
+  const current = navStack[navStack.length - 1];
+  return navStack.length > 1 ? navStack[navStack.length - 2] : parentOf(current);
+}
+
+function updateBackButton() {
+  const btn = document.getElementById("nav-back");
+  const target = backTarget();
+  btn.hidden = !target;
+  if (target) {
+    const label = `Back to ${pageLabel(target)}`;
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  }
+}
+
+document.getElementById("nav-back").addEventListener("click", () => {
+  if (navStack.length > 1) {
+    history.back();
+  } else {
+    const parent = parentOf(navStack[0]);
+    if (parent) location.hash = parent.slice(1);
+  }
+});
+
 // --- Minimal hash routing ----------------------------------------------------
 //
-// This app has no general router — only these two addressable states are
-// worth a URL: an overview snapshot and a single run's detail page, both
-// meant to be shareable/bookmarkable/linkable-to from elsewhere in the
-// app. Tests/Results/Findings stay exactly as they were (no hash), driven
-// only by their nav buttons like before.
+// No general router: each page is one hash pattern (#overview, #tests,
+// #tests/<area>, #results, #findings, #run/<code>, #area/<id>), so every
+// page can be linked to and is a browser-history entry (see Back above).
 
 function parseHash() {
   const hash = location.hash.slice(1);
@@ -1761,18 +2059,42 @@ function parseHash() {
   const areaMatch = hash.match(/^area\/(.+)$/);
   if (areaMatch) return { page: "area", id: decodeURIComponent(areaMatch[1]) };
   if (hash === "overview") return { page: "overview" };
+  if (hash === "results") return { page: "results" };
+  if (hash === "findings") return { page: "findings" };
+  if (hash === "tests") return { page: "tests", area: null };
+  const testsMatch = hash.match(/^tests\/(.+)$/);
+  if (testsMatch) return { page: "tests", area: decodeURIComponent(testsMatch[1]) };
   return null;
 }
 
+// Opening the cards or an area starts from an unfiltered view (a search
+// would otherwise hide the area that was just asked for). Selections are
+// kept, so tests can be picked across areas and run together.
+function openTestsView(area) {
+  state.testsView = { area, query: "", filter: "all" };
+  const onTests = document.getElementById("nav-tests").classList.contains("active")
+    && document.getElementById("tests-body");
+  if (onTests) {
+    syncTestsToolbar();
+    renderTestsBody();
+    window.scrollTo(0, 0);
+  } else {
+    showPage("tests");
+  }
+}
+
 function handleHashChange() {
+  recordNavigation();
   const route = parseHash();
   if (!route) return;
-  if (route.page === "overview") {
-    showPage("overview");
+  if (route.page === "overview" || route.page === "results" || route.page === "findings") {
+    showPage(route.page);
   } else if (route.page === "run") {
     showRunDetailPage(route.code);
   } else if (route.page === "area") {
     showAreaDetailPage(route.id);
+  } else if (route.page === "tests") {
+    openTestsView(route.area);
   }
 }
 
@@ -1800,88 +2122,209 @@ async function renderFindings(panel) {
   }
 }
 
+// --- Results page: every run, newest first, grouped by day -------------------
+//
+// One entry per run (a history file: a dashboard run or a command-line
+// pytest session). The newest is open; older ones are collapsed and load
+// their tests from /api/history/<run_id> the first time they're opened.
+
 async function renderResults(panel) {
   panel.innerHTML = "<p>Loading results…</p>";
   try {
-    const { batches } = await fetchJSON("/api/results");
-    if (batches.length === 0) {
+    const { sessions } = await fetchJSON("/api/history");
+    if (sessions.length === 0) {
       panel.innerHTML = `<p class="test-desc">No runs yet — go run a test from the Tests page.</p>`;
       return;
     }
     panel.innerHTML = `
       <div class="filter-field">
-        <input type="text" id="results-filter" class="filter-input" placeholder="Search results…" aria-label="Search results">
+        <input type="search" id="results-filter" class="filter-input"
+          placeholder="Search runs: code, date, box, marker, or a test that didn't pass…" aria-label="Search runs">
       </div>
-      <table class="results-table">
-        <thead><tr><th>Run</th><th>Test</th><th>Runs</th><th>Pass rate</th><th>Duration</th><th>Started</th><th>Artifacts</th></tr></thead>
-        <tbody>${batches.map(renderResultRow).join("")}</tbody>
-      </table>
-      <p id="results-filter-empty" class="test-desc" hidden>No results match.</p>`;
-    attachResultsFilter();
+      <div id="results-list">${renderSessionDays(sessions)}</div>
+      <p id="results-filter-empty" class="test-desc" hidden>No runs match.</p>`;
+    attachResultsHandlers(panel);
+    const newest = panel.querySelector(".history-run");
+    if (newest) {
+      newest.open = true;
+      loadSessionTests(newest);
+    }
   } catch (err) {
     panel.innerHTML = `<p class="test-desc">Couldn't load results: ${escapeHtml(err.message)}</p>`;
   }
 }
 
-// Client-side filter for the Results tab — matches nodeid/test name,
-// run code, and iteration outcomes (so "RUN-42" finds that run and "fail"
-// finds runs with a failed/errored iteration), case-insensitive substring.
-// Toggles [hidden] on non-matching <tr>s rather than re-rendering the table.
-function attachResultsFilter() {
-  const input = document.getElementById("results-filter");
-  const emptyMsg = document.getElementById("results-filter-empty");
-  if (!input) return;
-  const rows = document.querySelectorAll(".results-table tbody tr");
+function localDayKey(ts) {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function dayHeading(ts) {
+  const d = new Date(ts);
+  const full = d.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (localDayKey(d) === localDayKey(today)) return `Today · ${full}`;
+  if (localDayKey(d) === localDayKey(yesterday)) return `Yesterday · ${full}`;
+  return full;
+}
+
+function renderSessionDays(sessions) {
+  const days = [];
+  for (const s of sessions) {
+    const key = s.timestamp ? localDayKey(s.timestamp) : "unknown";
+    let day = days[days.length - 1];
+    if (!day || day.key !== key) {
+      day = { key, heading: s.timestamp ? dayHeading(s.timestamp) : "Undated", sessions: [] };
+      days.push(day);
+    }
+    day.sessions.push(s);
+  }
+  let first = true;
+  return days.map((day) => `
+    <section class="history-day">
+      <h3 class="history-day-heading">${escapeHtml(day.heading)}
+        <span class="muted-cell">${day.sessions.length} run${day.sessions.length === 1 ? "" : "s"}</span></h3>
+      ${day.sessions.map((s) => { const html = renderSession(s, first); first = false; return html; }).join("")}
+    </section>`).join("");
+}
+
+function countPills(counts) {
+  const order = [["pass", "passed", "pill-ok"], ["fail", "failed", "pill-bad"], ["error", "errors", "pill-bad"], ["skip", "skipped", "pill-muted"]];
+  return order
+    .filter(([key]) => counts[key] > 0)
+    .map(([key, label, cls]) => `<span class="pill ${cls}">${counts[key]} ${label}</span>`)
+    .join("");
+}
+
+function formatSeconds(seconds) {
+  if (typeof seconds !== "number") return "";
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const m = Math.floor(seconds / 60);
+  return m < 60 ? `${m}m ${Math.round(seconds % 60)}s` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function renderSession(s, isNewest) {
+  const time = s.timestamp
+    ? new Date(s.timestamp).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
+    : "—";
+  const code = s.run_code
+    ? `<a href="#run/${encodeURIComponent(s.run_code)}">${escapeHtml(s.run_code)}</a>`
+    : `<span class="muted-cell">no code</span>`;
+  // "not quarantine" is pytest.ini's default filter, i.e. no marker chosen.
+  const marker = s.markers && s.markers !== "not quarantine" ? s.markers : "";
+  const what = s.total === 1
+    ? escapeHtml(s.test_names[0] || "")
+    : `${s.total} tests${marker ? ` · ${escapeHtml(marker)}` : ""}`;
+  const box = s.target ? `${escapeHtml(s.target.replace(/^https?:\/\//, ""))}${s.target_version ? ` (${escapeHtml(s.target_version)})` : ""}` : "";
+  const search = [
+    s.run_code, s.timestamp, s.timestamp && dayHeading(s.timestamp), s.markers, s.source, s.target,
+    s.target_version, ...s.test_names, ...s.problems.map((p) => `${p.name} ${p.outcome} ${p.reason || ""}`),
+  ].join(" ").toLowerCase();
+  return `
+    <details class="history-run" data-run-id="${escapeAttr(s.run_id || "")}" data-run-code="${escapeAttr(s.run_code || "")}"
+      data-search="${escapeAttr(search)}">
+      <summary>
+        <span class="history-run-main">
+          <span class="history-run-code">${code}</span>
+          ${isNewest ? `<span class="pill pill-accent">latest</span>` : ""}
+          <span class="history-run-time" title="${escapeAttr(formatTimestamp(s.timestamp))}">${time}</span>
+          <span class="history-run-what">${what}</span>
+        </span>
+        <span class="history-run-meta">
+          ${countPills(s.counts)}
+          <span class="pill pill-muted">${s.source === "dashboard" ? "Dashboard" : "Command line"}</span>
+          ${box ? `<span class="muted-cell">${box}</span>` : ""}
+          <span class="muted-cell">${formatSeconds(s.duration)}</span>
+        </span>
+      </summary>
+      <div class="history-run-body"><p class="test-desc">Loading tests…</p></div>
+    </details>`;
+}
+
+async function loadSessionTests(details) {
+  if (details.dataset.loaded) return;
+  details.dataset.loaded = "1";
+  const body = details.querySelector(".history-run-body");
+  try {
+    const { tests } = await fetchJSON(`/api/history/${encodeURIComponent(details.dataset.runId)}`);
+    body.innerHTML = renderSessionTests(tests, details.dataset.runCode);
+  } catch (err) {
+    body.innerHTML = `<p class="test-desc">Couldn't load this run's tests: ${escapeHtml(err.message)}</p>`;
+    delete details.dataset.loaded;
+  }
+}
+
+// Tests that didn't pass come first, each with the first line of its
+// reason (a skip's reason says why it didn't run, e.g. "Engine 2 is in use").
+function renderSessionTests(tests, runCode) {
+  const rank = { error: 0, fail: 1, skip: 2, pass: 3 };
+  const rows = [...tests]
+    .sort((a, b) => (rank[a.outcome] ?? 9) - (rank[b.outcome] ?? 9))
+    .map((t) => {
+      const evidence = [
+        t.screenshot ? `<a href="/results/${t.screenshot}" target="_blank">screenshot</a>` : "",
+        t.trace ? `<a href="/results/${t.trace}" target="_blank">trace</a>` : "",
+      ].filter(Boolean).join(" · ") || `<span class="muted-cell">—</span>`;
+      return `<tr>
+        <td><div class="test-name">${escapeHtml((t.nodeid || "").split("::").pop())}</div>
+          ${t.reason && t.outcome !== "pass" ? `<div class="test-desc">${escapeHtml(t.reason)}</div>` : ""}</td>
+        <td>${outcomePill(t.outcome, t.failure_kind)}</td>
+        <td class="num">${formatSeconds(t.duration)}</td>
+        <td>${evidence}</td>
+      </tr>`;
+    })
+    .join("");
+  const details = runCode
+    ? `<p class="history-run-link"><a href="#run/${encodeURIComponent(runCode)}">Full run page: measurements, known issues, traces →</a></p>`
+    : "";
+  return `
+    <table class="results-table history-tests">
+      <thead><tr><th>Test</th><th>Result</th><th class="num">Duration</th><th>Evidence</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${details}`;
+}
+
+function attachResultsHandlers(panel) {
+  panel.querySelectorAll(".history-run").forEach((details) => {
+    details.addEventListener("toggle", () => {
+      if (details.open) loadSessionTests(details);
+    });
+  });
+  const input = panel.querySelector("#results-filter");
+  const emptyMsg = panel.querySelector("#results-filter-empty");
   input.addEventListener("input", () => {
     const q = input.value.trim().toLowerCase();
     let anyVisible = false;
-    rows.forEach((row) => {
-      const haystack = `${row.dataset.nodeid || ""} ${row.dataset.runCode || ""} ${row.dataset.outcomes || ""}`.toLowerCase();
-      const match = !q || haystack.includes(q);
-      row.hidden = !match;
-      if (match) anyVisible = true;
+    panel.querySelectorAll(".history-day").forEach((day) => {
+      let dayVisible = false;
+      day.querySelectorAll(".history-run").forEach((run) => {
+        const match = !q || run.dataset.search.includes(q);
+        run.hidden = !match;
+        if (match) dayVisible = true;
+      });
+      day.hidden = !dayVisible;
+      if (dayVisible) anyVisible = true;
     });
     emptyMsg.hidden = anyVisible;
   });
 }
 
+// Readable local date and time ("Thu, Oct 16, 2026, 3:47 PM PDT") for the
+// ISO-8601 UTC timestamps history stores.
 function formatTimestamp(ts) {
-  return ts ? ts.replace("T", " ").replace("Z", " UTC") : "—";
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (isNaN(d)) return ts;
+  return d.toLocaleString(undefined, {
+    weekday: "short", year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  });
 }
 
-function renderResultRow(batch) {
-  const dots = batch.iterations
-    .map(
-      (i) =>
-        `<span class="iteration-dot ${i.outcome === "pass" ? "pass" : i.outcome === "error" ? "error" : "fail"}"></span>`
-    )
-    .join("");
-  const links =
-    batch.iterations
-      .flatMap((i) => [
-        i.screenshot ? `<a href="/results/${i.screenshot}" target="_blank">screenshot</a>` : null,
-        i.trace ? `<a href="/results/${i.trace}" target="_blank">trace</a>` : null,
-      ])
-      .filter(Boolean)
-      .join(" · ") || "—";
-  // Older history predates run codes (before the backfill) — those rows
-  // just show a plain dash instead of a link, same as elsewhere in this
-  // file that surfaces run_code.
-  const runCell = batch.run_code
-    ? `<a href="#run/${encodeURIComponent(batch.run_code)}">${escapeHtml(batch.run_code)}</a>`
-    : `<span class="muted-cell">—</span>`;
-  const outcomes = batch.iterations.map((i) => i.outcome).join(" ");
-  return `
-    <tr data-nodeid="${escapeAttr(batch.nodeid)}" data-run-code="${escapeAttr(batch.run_code || "")}" data-outcomes="${escapeAttr(outcomes)}">
-      <td>${runCell}</td>
-      <td>${batch.nodeid.split("::").pop()}</td>
-      <td><span class="iteration-dots">${dots}</span></td>
-      <td>${batch.pass_count}/${batch.total}</td>
-      <td>${batch.total_duration.toFixed(1)}s</td>
-      <td>${formatTimestamp(batch.started_at)}</td>
-      <td>${links}</td>
-    </tr>`;
-}
+updateBackButton();
 
 // Initial load: honor a deep link straight to #overview or #run/<code> if
 // one is already in the address bar (e.g. a bookmarked/shared link, or a
@@ -1895,7 +2338,10 @@ function renderResultRow(batch) {
     showRunDetailPage(initialRoute.code);
   } else if (initialRoute && initialRoute.page === "area") {
     showAreaDetailPage(initialRoute.id);
+  } else if (initialRoute && (initialRoute.page === "results" || initialRoute.page === "findings")) {
+    showPage(initialRoute.page);
   } else {
+    if (initialRoute && initialRoute.page === "tests") state.testsView.area = initialRoute.area;
     loadModules();
   }
 }

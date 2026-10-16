@@ -19,15 +19,29 @@ directly, see the comment in `app.py`.) Then open the URL it prints
 
 ## What it does
 
-- **Tests** tab: browse tests grouped exactly the way `tests/` is
-  organized on disk, click a test to see its full description, click
-  Run to execute it for real (prompts for a repeat count; a `stateful`
-  test warns it generates real traffic before starting).
-- **Results** tab: every run's history, persisted in `results/history/`
-  (the same files the plain CLI-driven suite and `results/index.html`
-  already use) — survives restarts.
+- **Tests** tab: one card per `tests/` area, in T-number order (the same
+  grid as Overview). Each card shows what the area covers (its folder's
+  `__init__.py` docstring), how many tests are safe vs generate traffic,
+  whether they use the WAN emulator, and each test's last result as a dot.
+  Click a card for that area's list (`#tests/<area>`, linkable): each test's
+  own docstring, parameter count, last result with its run code, and Run
+  (prompts for a repeat count; a `stateful` test warns it generates real
+  traffic before starting). The search box and the filter chips (Safe,
+  Generates traffic, WAN emulator, Failing, Never run) search every area at
+  once. Ticked tests stay ticked across areas, so "Run selected" can mix them.
+- **Results** tab: every run, from the dashboard *and* the command line,
+  newest first under day headings with full dates. The newest run is open
+  with its tests (anything that didn't pass first, with the first line of
+  its reason; a skip says why it didn't run); older runs are collapsed and
+  load their tests when opened. Search by run code, date, box, marker or a
+  test that didn't pass. Read from `results/history/` (the same files the
+  CLI suite and `results/index.html` use), so it survives restarts.
 - **Findings** tab: `netropy-ui-findings.md`, rendered in the browser —
   no need to open the file in an editor to see what's been found.
+- **← Back** (left of the page tabs) steps back to the page you came from, like the
+  browser's Back button, which also works now that every page has its own address
+  (`#overview`, `#tests/<area>`, `#results`, `#findings`, `#run/<code>`, `#area/<id>`).
+  On a page opened from a link it goes to that page's parent (a run → Results).
 - Exactly one test runs at a time, globally, enforced server-side.
 
 ## Sharing the dashboard
