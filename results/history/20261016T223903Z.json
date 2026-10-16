@@ -1,0 +1,31 @@
+{
+  "run_id": "20261016T223903Z",
+  "run_code": "RUN-183",
+  "timestamp": "2026-10-16T22:39:03Z",
+  "git_sha": "d6fcca4",
+  "git_branch": "shared-pages-library",
+  "markers": "stateful",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.10",
+  "duration": 4.98,
+  "tests": [
+    {
+      "nodeid": "tests/t16_wan_loss/test_t16_loss_criteria.py::test_t16_loss_criteria_decide_the_verdict[chromium]",
+      "outcome": "skip",
+      "duration": 4.935,
+      "failure_message": "WAN emulator Engine 2 is in use: emulation on, default actions {'port-a': 'Default Path', 'port-b': 'Default Path'}",
+      "screenshot": null,
+      "trace": null,
+      "metrics": {
+        "test": "tests/t16_wan_loss/test_t16_loss_criteria.py::test_t16_loss_criteria_decide_the_verdict[chromium]",
+        "unit": null,
+        "impairment": null,
+        "checks": [],
+        "written-at": "2026-10-16T22:39:03.404783+00:00",
+        "runs": []
+      },
+      "metrics_file": "results/metrics/tests-t16-wan-loss-test-t16-loss-criteria-py-test-t16-loss-criteria-decide-the-verdict-chromium-20261016T223903Z.json"
+    }
+  ],
+  "batch_id": "ea04eeb8-00cc-4d85-bc31-e550a2f99f50"
+}

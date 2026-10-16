@@ -1,0 +1,21 @@
+{
+  "run_id": "20261016T221459Z",
+  "run_code": "RUN-175",
+  "timestamp": "2026-10-16T22:14:59Z",
+  "git_sha": "d6fcca4",
+  "git_branch": "shared-pages-library",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.10",
+  "duration": 9.162,
+  "tests": [
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_speaker1_facade_builds_their_config[chromium]",
+      "outcome": "pass",
+      "duration": 9.112,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}
