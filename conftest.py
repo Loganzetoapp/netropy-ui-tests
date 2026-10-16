@@ -257,18 +257,39 @@ def wan_page(browser) -> Page:
     context.close()
 
 
+@pytest.fixture(scope="session")
+def wan_engine_lease(browser):
+    """Someone else's idle Engine 2 setup that WAN tests borrowed this
+    session (only with WAN_BORROW_IDLE_ENGINE=true), put back when the
+    session ends. See pages/wan_preflight.py."""
+    from pages.wan_emulator_page import WanEmulatorPage
+    from pages.wan_preflight import EngineLease
+
+    lease = EngineLease()
+    yield lease
+    if lease.original is None:
+        return
+    context = browser.new_context(base_url=_settings.WAN_URL)
+    try:
+        emulator = WanEmulatorPage(context.new_page())
+        emulator.login()
+        print(f"\nWAN emulator Engine 2: {lease.restore(emulator)}")
+    finally:
+        context.close()
+
+
 @pytest.fixture
-def wan_bench(traffic_engine, wan_page: Page, run_metrics, request):
+def wan_bench(traffic_engine, wan_page: Page, run_metrics, wan_engine_lease, request):
     """NTG Port 3 -> emulator Engine 2 -> NTG Port 4 as one bench
-    (pages/wan_bench.py). An Engine 2 someone else is using makes the
-    test skip, like busy ports."""
+    (pages/wan_bench.py). Pre-run checks (pages/wan_preflight.py) run
+    before its first run: busy ports or an Engine 2 in use skip the test."""
     from pages.wan_bench import WanBench
     from pages.wan_emulator_page import WanEmulatorPage
     from wan_api import WanApi
 
     return WanBench(traffic_engine, WanEmulatorPage(wan_page),
                     WanApi(_settings.WAN_URL, _settings.WAN_USER, _settings.WAN_PASS),
-                    run_metrics, request.node.nodeid)
+                    run_metrics, request.node.nodeid, lease=wan_engine_lease)
 
 
 @pytest.fixture

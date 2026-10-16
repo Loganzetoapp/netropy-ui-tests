@@ -21,6 +21,8 @@ emulator gets labels or data-testids.
 """
 import contextlib
 import re
+from dataclasses import dataclass
+from typing import Dict
 
 from playwright.sync_api import Page, expect
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -37,6 +39,17 @@ from pages.wan_path_spec import WanPathSpec
 _SAVE_SETTLE_MS = 3_000
 _SAVE_ATTEMPTS = 5
 _PORTS = ("port-a", "port-b")
+
+
+@dataclass
+class EngineState:
+    """An engine's switch settings: Emulation and both Default Actions."""
+    emulation: bool
+    actions: Dict[str, str]   # {"port-a": label, "port-b": label}
+
+    @property
+    def idle(self) -> bool:
+        return not self.emulation and set(self.actions.values()) == {"Bypass"}
 
 
 class WanEmulatorPage(BasePage):
@@ -106,6 +119,15 @@ class WanEmulatorPage(BasePage):
                     f"Default Action for {port} never saved as {label!r}; "
                     f"still {self.default_actions()}"
                 )
+
+    def state(self) -> EngineState:
+        return EngineState(self.emulation_on(), self.default_actions())
+
+    def make_idle(self) -> None:
+        """Emulation off, then both Default Actions to Bypass (the order
+        that never leaves traffic on a half-configured path)."""
+        self.set_emulation(False)
+        self.set_default_actions("Bypass")
 
     def require_idle(self, own_path: str = None) -> None:
         """The engine is ours to use: Emulation off and both ports on

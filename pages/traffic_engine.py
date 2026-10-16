@@ -30,6 +30,7 @@ class RunResult:
     row_text: str
     ntg: Optional[dict]   # the run digest recorded on the summary sheet
     metrics: object = None
+    samples: Optional[list] = None   # the saved run's per-second sample[] (never in history)
 
     def assert_passed(self) -> None:
         """NTG verdict is pass AND the summary sheet's enforced checks hold
@@ -120,16 +121,18 @@ class TrafficEngine:
             self.health.assert_healthy(context=f"{name} run #{run_number} lost", testbed=name)
             raise
         return self.result(name, row, label, expected_seconds=spec.run_seconds,
-                           expect_traffic=spec.expect_traffic)
+                           expect_traffic=spec.expect_traffic, expect_loss=spec.expect_loss)
 
     def result(self, name: str, row, label: str = "main", expected_seconds: float = None,
-               expect_traffic: bool = True, run_id: str = None) -> RunResult:
+               expect_traffic: bool = True, run_id: str = None,
+               expect_loss: bool = False) -> RunResult:
         """A RunResult for a saved Test Reports `row`, with the run recorded
         on the summary sheet. For tests that drive the run themselves
         (stop mid-run, restart, ...) after building with create()/start()."""
         verdict, row_text = self.runs.verdict(row), row.inner_text()
-        digest = self.record(name, label, expected_seconds, expect_traffic, run_id)
-        return RunResult(name, verdict, row_text, digest, self.metrics)
+        digest, samples = self._record(name, label, expected_seconds, expect_traffic, run_id,
+                                       expect_loss)
+        return RunResult(name, verdict, row_text, digest, self.metrics, samples)
 
     def run(self, name: str, spec: TestbedSpec, label: str = "main") -> RunResult:
         self.create(name, spec)
@@ -140,10 +143,15 @@ class TrafficEngine:
     def record(self, name: str, label: str = "main", expected_seconds: float = None,
                expect_traffic: bool = True, run_id: str = None) -> Optional[dict]:
         """Read the saved run (latest, or `run_id`) through the API and add
-        it, plus the standard checks, to the summary sheet. Without a
-        metrics recorder this is a no-op (hardware-free use)."""
+        it, plus the standard checks, to the summary sheet; returns its
+        digest. Without a metrics recorder this is a no-op (hardware-free
+        use)."""
+        return self._record(name, label, expected_seconds, expect_traffic, run_id)[0]
+
+    def _record(self, name, label, expected_seconds, expect_traffic, run_id, expect_loss=False):
+        """record(), returning (digest, the saved run's sample[])."""
         if self.metrics is None:
-            return None
+            return None, None
         from ntg_api import NtgApi
         from run_metrics import capture_ntg_run, standard_checks
 
@@ -157,8 +165,8 @@ class TrafficEngine:
         digest, saved, config = capture_ntg_run(api, name, run_id)
         self.metrics.add_run(label, ntg=digest, series={"ntg": saved.get("sample"), "ntg-config": config})
         standard_checks(self.metrics, label, digest, expected_seconds=expected_seconds,
-                        expect_traffic=expect_traffic)
-        return digest
+                        expect_traffic=expect_traffic, expect_loss=expect_loss)
+        return digest, saved.get("sample")
 
     # --- teardown -----------------------------------------------------
     def cleanup(self) -> None:

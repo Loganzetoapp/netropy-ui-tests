@@ -6,9 +6,13 @@ what the box actually saved.
 
 Directions: the path's "source" side is the engine's first port (port-a),
 so source-to-destination is emulator port 3 -> 4 on Engine 2, which is NTG
-Port 3 -> 4.
+Port 3 -> 4. Each direction enters the WAN through its sender's outbound
+access link (source/outbound for a-to-b), which is where a bandwidth cap
+and its queue sit; the emulator's stats call that link the direction's
+"inflow".
 
     WanPathSpec("t15-asym", a_to_b=Impairment(delay_ms=10), b_to_a=Impairment(delay_ms=80))
+    WanPathSpec("t17-cap", a_to_b=Impairment(bandwidth_mbps=100))
 """
 from dataclasses import dataclass, field
 from typing import Dict, Optional
@@ -16,26 +20,51 @@ from typing import Dict, Optional
 A_TO_B = "source-to-destination"
 B_TO_A = "destination-to-source"
 # A new path's access links default to 128 Kbps, which would throttle any
-# NTG run to nothing; impairment tests open them up to the port speed.
+# NTG run to nothing; a direction without a cap is opened up to this.
 WIDE_OPEN_GBPS = 10
-_ACCESS_LINKS = ("source/outbound", "destination/outbound")
+_ACCESS_LINK = {A_TO_B: "source/outbound", B_TO_A: "destination/outbound"}
 
 
 @dataclass(frozen=True)
 class Impairment:
-    """What the emulator does to one direction. Extend here (loss, jitter,
-    ...) as tests need it; each field maps to its form fields in fields()."""
-    delay_ms: float = 0  # constant one-way delay
+    """What the emulator does to one direction. Extend here as tests need
+    it; each field maps to its form fields in fields()."""
+    delay_ms: float = 0                    # constant one-way delay
+    loss_pct: float = 0                    # random loss, % of frames
+    bandwidth_mbps: Optional[float] = None  # access-link cap; None = wide open
 
-    def fields(self, direction: str) -> Dict[str, str]:
-        if not self.delay_ms:
-            return {}
-        prefix = f"wan/{direction}/delay"
-        # The method select must come first: it reveals the latency input.
-        return {f"{prefix}/method": "constant", f"{prefix}/constant/latency": _num(self.delay_ms)}
+    def fields(self, direction: str, wide_open_gbps: float = WIDE_OPEN_GBPS) -> Dict[str, str]:
+        link = f"{_ACCESS_LINK[direction]}/bandwidth"
+        # Metric before rate: the rate is read in the selected unit.
+        if self.bandwidth_mbps:
+            values = {f"{link}/metric": "Mbps", f"{link}/rate": _num(self.bandwidth_mbps)}
+        else:
+            values = {f"{link}/metric": "Gbps", f"{link}/rate": _num(wide_open_gbps)}
+        wan = f"wan/{direction}"
+        # Each method select must come first: it reveals its value input.
+        if self.delay_ms:
+            values[f"{wan}/delay/method"] = "constant"
+            values[f"{wan}/delay/constant/latency"] = _num(self.delay_ms)
+        if self.loss_pct:
+            values[f"{wan}/loss/method"] = "random"
+            values[f"{wan}/loss/random/rate"] = _num(self.loss_pct)
+        return values
 
     def describe(self) -> dict:
-        return {"delay": f"constant {_num(self.delay_ms)} ms"} if self.delay_ms else {}
+        described = {}
+        if self.delay_ms:
+            described["delay"] = f"constant {_num(self.delay_ms)} ms"
+        if self.loss_pct:
+            described["loss"] = f"random {_num(self.loss_pct)} %"
+        if self.bandwidth_mbps:
+            described["bandwidth"] = f"{_num(self.bandwidth_mbps)} Mbps"
+        return described
+
+    def loses_frames(self, offered_mbps: Optional[float]) -> bool:
+        """True when this direction drops frames by design for traffic
+        offered at `offered_mbps`: random loss, or a cap below the offer."""
+        capped = bool(self.bandwidth_mbps and offered_mbps and self.bandwidth_mbps < offered_mbps)
+        return bool(self.loss_pct) or capped
 
 
 @dataclass(frozen=True)
@@ -56,13 +85,8 @@ class WanPathSpec:
 
     def form_fields(self) -> Dict[str, str]:
         """{form control name: value}, in the order they must be set."""
-        values = {}
-        for link in _ACCESS_LINKS:
-            values[f"{link}/bandwidth/metric"] = "Gbps"
-            values[f"{link}/bandwidth/rate"] = _num(self.access_gbps)
-        values.update(self.a_to_b.fields(A_TO_B))
-        values.update(self.reverse.fields(B_TO_A))
-        return values
+        return {**self.a_to_b.fields(A_TO_B, self.access_gbps),
+                **self.reverse.fields(B_TO_A, self.access_gbps)}
 
     def describe(self, engine: int) -> dict:
         """For the summary sheet's `impairment` block."""

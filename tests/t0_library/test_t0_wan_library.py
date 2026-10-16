@@ -10,7 +10,13 @@ from pages.wan_emulator_page import WanEmulatorPage
 from pages.wan_path_spec import Impairment, WanPathSpec
 from wan_api import WanApi
 
-PATH = WanPathSpec("t0-lib-probe", a_to_b=Impairment(delay_ms=12.5), b_to_a=Impairment(delay_ms=80))
+# Every Impairment field, different per direction, so a swapped direction
+# or a field saved to the wrong access link shows up as a mismatch.
+PATH = WanPathSpec(
+    "t0-lib-probe",
+    a_to_b=Impairment(delay_ms=12.5, loss_pct=1.5, bandwidth_mbps=100),
+    b_to_a=Impairment(delay_ms=80, loss_pct=0.25, bandwidth_mbps=250),
+)
 
 
 @pytest.mark.hardware_free

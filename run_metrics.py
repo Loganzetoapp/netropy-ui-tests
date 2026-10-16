@@ -86,20 +86,23 @@ def capture_ntg_run(api, testbed: str, run_id: str = None):
 
 
 def standard_checks(metrics, label: str, digest: dict, expected_seconds: float = None,
-                    expect_traffic: bool = True) -> None:
+                    expect_traffic: bool = True, expect_loss: bool = False) -> None:
     """The checks every traffic test gets, so a run can't "pass" without
     doing anything (the NTG's own verdict is "pass" with `criteria: null`).
 
     Enforced: traffic was sent and received. Recorded only, until a
-    PASS/FAIL threshold is agreed: loss %, each port's average TX vs its
-    configured rate, and the run's length."""
+    PASS/FAIL threshold is agreed: loss % (skipped when the run loses
+    frames on purpose, e.g. through an impaired WAN path, whose own checks
+    judge the loss), each port's average TX vs its configured rate, and
+    the run's length."""
     s = digest.get("summary") or {}
     if expect_traffic:
         metrics.at_least(f"{label}: frames sent", minimum=1, measured=s.get("tx-frames"), unit="frames")
         metrics.at_least(f"{label}: frames received", minimum=1, measured=s.get("rx-frames"),
                          unit="frames")
-    metrics.check(f"{label}: loss %", expected=0.0, measured=s.get("loss-pct"), tolerance=0.01,
-                  unit="%", enforced=False)
+    if not expect_loss:
+        metrics.check(f"{label}: loss %", expected=0.0, measured=s.get("loss-pct"), tolerance=0.01,
+                      unit="%", enforced=False)
     actual = {p["port-id"]: p.get("avg-tx-rate") for p in digest.get("port") or []}
     for port in digest.get("configured-ports") or []:
         rate = port.get("rate-mbps")
@@ -149,13 +152,13 @@ class RunMetrics:
 
     def check(self, name, expected, measured, tolerance=None, unit="", enforced=True) -> bool:
         """Record expected vs measured. `tolerance` is absolute; None means
-        exact. Unenforced checks are reported but never fail a test (used
-        while a check's tolerance or meaning is still being established)."""
-        ok = (
-            measured is not None
-            and expected is not None
-            and abs(measured - expected) <= (tolerance or 0)
-        )
+        exact. Text values (a verdict) must match exactly. Unenforced checks
+        are reported but never fail a test (used while a check's tolerance
+        or meaning is still being established)."""
+        if _is_number(expected) and _is_number(measured):
+            ok = abs(measured - expected) <= (tolerance or 0)
+        else:
+            ok = measured is not None and measured == expected
         self.record["checks"].append({
             "name": name, "expected": expected, "measured": measured,
             "tolerance": tolerance, "unit": unit, "ok": ok, "enforced": enforced,
@@ -181,6 +184,10 @@ class RunMetrics:
         path = METRICS_DIR / f"{slug}-{now.strftime('%Y%m%dT%H%M%SZ')}.json"
         path.write_text(json.dumps(self.record, indent=1, default=str))
         return path
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def history_digest(record: dict) -> dict:

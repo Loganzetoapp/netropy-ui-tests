@@ -40,6 +40,7 @@ class TestbedSpec:
     ramp: Optional[Tuple[int, int, int]] = None      # (up, hold, down) seconds
     frame_size: Optional[int] = None                 # "apply to all"
     expect_traffic: bool = True                      # enforce frames sent/received > 0
+    expect_loss: bool = False                        # frames are lost on purpose (impaired WAN)
 
     def __post_init__(self):
         assert self.duration_s or self.ramp, (

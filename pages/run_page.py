@@ -60,6 +60,48 @@ class RunPage(BasePage):
         verdict = self.verdict(row)
         assert verdict == "pass", f"run verdict {verdict!r}; saved run row: {row.inner_text()!r}"
 
+    def verdict_once(self, row, expected: str, timeout: int = 15_000) -> str:
+        """The row's verdict once it reads `expected`, or whatever it still
+        reads after `timeout`. Re-judging a saved run (new pass criteria)
+        updates the cell asynchronously; this lets the caller record the
+        verdict instead of failing on the first stale read."""
+        cell = row.get_by_text(re.compile(rf"^{re.escape(expected)}$", re.I))
+        try:
+            expect(cell).to_be_visible(timeout=timeout)
+        except AssertionError:
+            pass
+        return self.verdict(row)
+
+    # --- pass criteria ------------------------------------------------
+    # The result cell's ⚙ button ("Edit pass criteria", a tooltip only)
+    # opens a popover per saved run. Its three rules are number inputs
+    # whose <label> isn't tied to them, so they have no accessible names
+    # (a11y; data-testid wanted): each is found inside its rule's block.
+    _CRITERIA_RULES = {"max_loss_pct": "Max loss", "max_latency_ms": "Max latency",
+                       "min_rx_pct": "Min Rx"}
+
+    def criteria_popover(self, run_number: int):
+        title = self.page.get_by_text(re.compile(rf"^Pass criteria — Run #{run_number}$"))
+        return title.locator("xpath=ancestor::div[.//button[normalize-space()='Save']][1]")
+
+    def set_pass_criteria(self, run_number: int, max_loss_pct=None, max_latency_ms=None,
+                          min_rx_pct=None) -> None:
+        """Set saved run #`run_number`'s pass criteria and save. A rule
+        given as None is turned off (empty field); 0 is a real threshold
+        ("0 = require zero loss"). The NTG re-judges the run against them."""
+        values = {"max_loss_pct": max_loss_pct, "max_latency_ms": max_latency_ms,
+                  "min_rx_pct": min_rx_pct}
+        self.run_row(run_number).get_by_role("button", name="⚙").click()
+        popover = self.criteria_popover(run_number)
+        expect(popover).to_be_visible()
+        for key, label in self._CRITERIA_RULES.items():
+            field = popover.locator(".fg").filter(has_text=label).get_by_role("spinbutton")
+            text = "" if values[key] is None else f"{values[key]:g}"
+            field.fill(text)
+            expect(field).to_have_value(text)
+        popover.get_by_role("button", name="Save", exact=True).click()
+        expect(popover).to_be_hidden(timeout=15_000)
+
     def last_run_avg_latency_ms(self) -> float:
         """The "Avg Latency" card of the latest saved run (e.g. "0.224 ms"),
         behind the "Last run #N" button. Call on a Statistics page opened
