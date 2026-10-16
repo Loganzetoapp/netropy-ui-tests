@@ -107,12 +107,12 @@ link is 1G).
 | ID | Test | Configure | Assert (NTG ↔ emulator) | Why it matters |
 |---|---|---|---|---|
 | T15a ✅ | Delay only | 50 ms constant, both directions | avg latency +50 ± 5 ms; loss 0 | Done |
-| T15b | **Delay sweep** | 1, 10, 100, 500 ms | Rise matches each setting; min ≈ max for constant delay | Linearity / unit errors (µs vs ms) |
-| T15c | **Asymmetric delay** | 10 ms 3→4, 80 ms 4→3 | Per-direction latency matches each side | Per-direction reporting |
-| T16a | **Random loss** | 1 % and 5 % | NTG `loss-pct` ≈ setting; **NTG loss-frames == emulator wan-drops** (± in-flight) | Loss accuracy + cross-box accounting |
-| T16b | **Loss vs NTG criteria** | 2 % loss, criterion max-loss 1 % | NTG verdict = FAIL; with criterion 5 % → PASS | The NTG's pass/fail logic |
-| T17a | **Bandwidth cap** | 100 Mbps cap, offer 500 Mbps | NTG rx-rate ≈ 100 Mbps; loss ≈ 80 %; emulator queue drops ≈ NTG loss | Throughput accuracy, overload behaviour |
-| T17b | **Cap with headroom** | 400 Mbps cap, offer 300 Mbps | Zero loss; latency rises only by queueing | Shaper doesn't add false loss |
+| T15b ✅ | **Delay sweep** | 1, 10, 100, 500 ms | Rise matches each setting; min ≈ max for constant delay | Linearity / unit errors (µs vs ms) |
+| T15c ✅ | **Asymmetric delay** | 10 ms 3→4, 80 ms 4→3 | Per-direction latency matches each side | Per-direction reporting |
+| T16a ◐ | **Random loss** | 1 % and 5 % | NTG `loss-pct` ≈ setting; **NTG loss-frames == emulator wan-drops** (± in-flight) | Loss accuracy + cross-box accounting |
+| T16b ◐ | **Loss vs NTG criteria** | 2 % loss, criterion max-loss 1 % | NTG verdict = FAIL; with criterion 5 % → PASS | The NTG's pass/fail logic |
+| T17a ◐ | **Bandwidth cap** | 100 Mbps cap, offer 500 Mbps | NTG rx-rate ≈ 100 Mbps; loss ≈ 80 %; emulator queue drops ≈ NTG loss | Throughput accuracy, overload behaviour |
+| T17b ◐ | **Cap with headroom** | 600 Mbps cap, offer 500 Mbps | Zero loss; latency rises only by queueing | Shaper doesn't add false loss |
 | T18a | **Jitter** | Normal delay mean 20 ms, σ 5 ms | NTG avg jitter in the expected range; min/max latency within bounds | Jitter accuracy |
 | T18b | **Duplication / reordering** | 1 % each | Run completes; NTG doesn't report negative loss or > 100 % rx; note how it counts them | Likely bug area: unusual accounting |
 | T19a | **Outage mid-run** | Periodic outage (e.g. 2 s every 10 s) | NTG per-second `sample[]` shows gaps at the right times; the run is saved, not lost | Robustness + the crash/bad-state check |
@@ -120,6 +120,34 @@ link is 1G).
 | T19c | **Long delay vs drain** | 2 s delay, short run | Run is saved; `tail-not-settled` reported honestly; no lost run | Edge of the drain window; overlaps finding #1 |
 | T20 | **Presets** (golden set) | LTE, GEO satellite, 802.11n | Each within tolerance on rate / latency / loss | Release-to-release regression |
 | T21 | **Per-stream paths** (method C) | UDP stream → loss path, TCP stream → delay path | Each stream shows only its own impairment | Per-stream attribution |
+
+**T16/T17 as built (2026-10-16).** Folders `tests/t16_wan_loss`, `tests/t17_wan_bandwidth`; same
+testbed and spec as T15, so one baseline serves T15–T17 in a session. Library additions:
+`Impairment.loss_pct` / `bandwidth_mbps`, `WanBench.check_loss` / `check_bandwidth` /
+`check_verdict`, `RunPage.set_pass_criteria`. Decisions made while building:
+- **T17b offers 500 Mbps against a 600 Mbps cap**, not 300 against 400: the same spec as every
+  other WAN test, so it reuses the session's baseline instead of needing its own.
+- **Pass criteria are per saved run and can be edited afterwards** (`set-run-criteria`; the UI's
+  ⚙ "Edit pass criteria" popover on a Test Reports row). So T16b needs one lossy run, then
+  re-judges it at Max loss 1 % (must FAIL) and 5 % (must PASS), on screen and via the API.
+- **Runs that lose frames on purpose aren't required to "pass"**: without criteria the NTG's
+  verdict is an undocumented loss-based default, which says nothing about the product here.
+- **Rates are read from the per-second samples' steady state** (2 s after ramp-up to 1 s before
+  ramp-down): the run averages include the ramps.
+- A cap's "auto" queue is drop-tail sized to 250 ms of the cap, so T17a records (not enforces
+  yet) max latency +250 ms ± 10 %.
+
+**First hardware results (2026-10-16, NTG 5.0.10, emulator .213 Engine 2).** Every measured check
+held; the two boxes agree frame for frame:
+- T16a 1 % / 5 % and T16b 2 %: NTG loss 1.00–2.03 % vs set; NTG lost frames = emulator WAN drops
+  exactly; latency unchanged. T16b: Max loss 1 % → FAIL, 5 % → PASS, on screen and in the
+  Controller (thresholds stored as typed). With no criteria, the default verdict was FAIL at 2 %.
+- T17a 100 Mbps cap: NTG receives 99.735 Mbps (the emulator charges 1,504 B per 1,500 B NTG frame:
+  1500/1504 = 99.73 %); NTG lost frames = emulator queue drops exactly (704,146); max latency
+  +249.8 / +250.1 ms = the auto queue. T17b 600 Mbps: nothing lost, full rate, no added latency.
+- The emulator's per-direction `frames` counts frames **delivered**, and `drops` all drops (WAN and
+  queue), so the bench checks delivered = NTG received and delivered + dropped = NTG sent.
+- Port 4 dropped to 0 Mbps (then Port 3 to "unknown") right after T16b; the pre-run check caught it.
 
 **Golden overnight candidates:** T15a, T16a, T17a, T19a, plus one preset.
 Together they cover delay, loss, rate, robustness and a realistic bundle in
@@ -241,7 +269,7 @@ For each WAN test:
 | 1 ✅ | `ntg_api.py` + `wan_api.py`: read-only clients (login, status, stats, runs, stats-summary/records) with the `/stats`-after-stop guard. Checked against .212/.213 (reads only) | S | Decision 1 |
 | 2 ✅ | `run_metrics` fixture (`run_metrics.py`) + history `metrics` + sidecar in `results/metrics/`; T15 records NTG run + config and emulator counters + series. First result: NTG Port 4 sends 1/10 of its rate while the run PASSes | M | 1 |
 | 3 ◐ | Results page. **Done (dashboard run detail):** expected-vs-measured table, per-run two-witness table, port rate vs configured, run phases + emulator health, per-second latency and per-direction throughput charts (sidecar). **Not yet:** the static `results/index.html` report, and trends of a check across runs | M | 2 |
-| 4 | T16a/b (loss, criteria) and T17a/b (bandwidth): first tests using the cross-checks | M | 2, decision 3 |
+| 4 ◐ | T16a/b (loss, criteria) and T17a/b (bandwidth): first tests using the cross-checks. **Built and run 2026-10-16** (results below); T16b passes clean; T16a/T17 need one re-run with the corrected frame check | M | 2, decision 3 |
 | 5 | Live poller + SSE `live-stats` + live panel | M | 1 |
 | 6 | T15b/c, T18, T19: distributions, asymmetry, outage and mid-run change | M | 4 |
 | 7 | Golden overnight set + presets (T20) + per-stream paths (T21) | M | 3, 4, decision 4 |

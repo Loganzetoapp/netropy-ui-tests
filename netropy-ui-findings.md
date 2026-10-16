@@ -40,6 +40,58 @@ to confirm, because each would act on someone else's testbed or on shared hardwa
 4. **WAN emulator .213 Engine Log: "redundant power supply failure"**
    (Oct 06 00:32:49). This is a hardware warning for whoever owns the box.
 
+## Observed 2026-10-16 on NTG 5.0.10 (not yet reproduced as tests)
+
+Seen while building T16b, read-only (the criteria popover was opened on an
+existing run and cancelled). The unit was updated from 5.0.9 to 5.0.10
+without notice; the hardware-free suite still passes on it (72/73, the one
+failure intermittent, see below).
+
+1. **The "Edit pass criteria" control is an unlabelled ⚙ button.** Its only
+   description is a custom `data-tip` tooltip, so its accessible name is "⚙".
+   The popover it opens has no dialog role, and its three number inputs (Max
+   loss %, Max latency ms, Min Rx % of line) sit next to `<label>`s that
+   aren't tied to them, so none has an accessible name. The suite finds them
+   by their rule's text block; a `data-testid` or `aria-label` would do.
+2. **Units differ between the UI and the API for Max latency**: the popover
+   takes milliseconds, the Controller stores `max-latency-us` (µs). Fine if
+   converted consistently; worth one test (T16b checks Max loss only).
+3. **The API documentation contradicts the UI on runs with no criteria**:
+   `/tests/{key}/runs/{id}/criteria` says "a run with no rule set has no
+   verdict", but every such run shows PASS or FAIL (the "loss-based default"
+   below). Admin's TE-01 has two FAIL runs with `criteria: {}` at 100 % loss.
+4. **The shared `test` login makes `mine` meaningless for ownership.**
+   Another user's SessionStrike testbed "SS" held Ports 3/4 under `test`, so
+   the Controller reported them `mine: true` to the suite. The suite used to
+   treat `mine` ports as its own (and Speaker 1's `release_ports` would have
+   released them, deactivating "SS"); both now go by testbed name instead.
+   Not a product bug, but a reason for per-person accounts on shared boxes.
+5. **The editor shows "saved" before the server has the change.** The
+   UNSAVED badge clears the moment Save *sends* `PUT /tests/<name>`, not when
+   the Controller answers (probe, 4/4: badge gone at +0.03 s, config readable
+   via the API ~0.05–0.1 s later). Two t0 self-tests read the config straight
+   after Save and intermittently got the old one (2 of 4 full runs). Not data
+   loss, but if a save were refused the user would already have been told it
+   saved; whether the badge comes back on an error is untested. Two more
+   details from the probes: on 5.0.10 the badge's text is "UNSAVED" only
+   through CSS (the suite's exact-text wait had silently stopped waiting),
+   and GET /tests/<name> can still return the old config ~0.1 s *after* the
+   PUT answered 200 (1 of 4), a read-after-write gap for API users. The
+   suite now waits for the PUT's 200 and Save going disabled
+   (`TestbedEditorPage.save`), and its API read-backs poll briefly.
+
+6. **NTG verdicts and loss through the WAN emulator (T16/T17, first runs).**
+   The NTG's loss and latency numbers are right to the frame: its lost
+   frames equal the emulator's drops exactly at 1 %, 2 %, 5 % loss and under
+   a 100 Mbps cap. Pass criteria work as the popover says (Max loss 1 % →
+   FAIL, 5 % → PASS on a 2 % run). With no criteria set, the "loss-based
+   default" FAILed a 2 % run but PASSed a 0.0002 % one, so the default
+   threshold is somewhere between; still undocumented.
+7. **Port links still flap on 5.0.10.** Straight after T16b, Port 4 reported
+   0 Mbps and then Port 3 oper-status "unknown"; both were back up within a
+   few minutes. Same symptom as "Port 4 link speed changes on its own"
+   below. The WAN tests now wait up to 30 s for links before a run.
+
 ## Confirmed product issues
 
 Reproduced directly, not inferred from a single failed run.
@@ -383,9 +435,14 @@ needs a different mechanism (VLAN/tagging mismatch, traffic-mix edge cases)
 
 ### The pass/fail criterion is an undisclosed default
 Every run checked so far shows the Result cell's tooltip reading
-*"loss-based default (no pass criteria set)"*, next to an unexplored "Edit
-pass criteria" control. There's a real editor for this somewhere in the
-product; what the default actually computes hasn't been pinned down.
+*"loss-based default (no pass criteria set)"*, next to an "Edit pass
+criteria" control. What the default actually computes hasn't been pinned
+down. **Update 2026-10-16:** the control is the result cell's ⚙ button. It
+edits that one saved run's criteria after the fact (Max loss %, Max latency
+ms, Min Rx % of line; empty = rule off, 0 = a real threshold), and the NTG
+re-judges the run (`set-run-criteria` in the API). T16b
+(`tests/t16_wan_loss/test_t16_loss_criteria.py`) uses it to test the
+verdict against a known 2 % loss.
 
 ---
 
@@ -2927,3 +2984,70 @@ Trace summary:
 ```
 (no trace captured)
 ```
+
+### 2026-10-13 06:28 UTC — tests/t15_wan_emulator/test_t15_asymmetric_delay.py::test_t15_asymmetric_delay_reported_per_direction
+
+**Status:** pending review
+
+Failure message: AssertionError: Traffic never started after Start → Continue. On-screen toasts: []
+Unit healthy; Controller view: {'health': {'status': 'ok', 'demo': False, 'recovery': False, 'units': {'local': True}}, 'datapath': None, 'latest_run': None}
+
+Trace summary:
+```
+Page error (JS exception): Failed to read the 'sessionStorage' property from 'Window': Access is denied for this document.
+Console error: Failed to load resource: the server responded with a status of 504 (Gateway Timeout)
+Console error: Failed to load resource: the server responded with a status of 409 (Conflict)
+Action sequence:
+  BrowserContext.newPage({})
+  Frame.goto({'url': '/', 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 10000, 'isNot': False})
+  Frame.expect({'selector': '.card >> internal:has-text="Testbeds"i >> internal:text=/^\\d+ saved · \\d+ active$/', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.queryCount({'selector': '.modal-overlay'})
+  Frame.queryCount({'selector': '.toast button'})
+  Frame.isVisible({'selector': 'internal:role=button[name="← Dashboard"i]', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:text="Port Status"i', 'strict': True, 'timeout': 30000})
+  Frame.isVisible({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:text="Port Status"i', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.expect({'selector': '.card >> internal:has-text="Testbeds"i >> internal:text=/^\\d+ saved · \\d+ active$/', 'expression': 'to.be.visible', 'timeout': 20000, 'isNot': False})
+  Frame.queryCount({'selector': '.tb-tile >> internal:has="internal:text=\\"T15-WAN\\"s"'})
+  Frame.click({'selector': 'internal:role=button[name="✚ Create Testbed"s]', 'strict': True, 'timeout': 30000})
+  Frame.fill({'selector': 'internal:attr=[placeholder="e.g. web-perf-01"i]', 'value': 'T15-WAN', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Traffic Engine"s]', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name="Create draft"s]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': '.tb-tile >> internal:has="internal:text=\\"T15-WAN\\"s"', 'expression': 'to.have.count', 'expectedNumber': 1, 'timeout': 10000, 'isNot': False})
+  Frame.click({'selector': '.tb-tile >> internal:has="internal:text=\\"T15-WAN\\"s" >> internal:role=button[name="Edit"i]', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=heading[name="Ports"i]', 'expression': 'to.be.visible', 'timeout': 15000, 'isNot': False})
+  Frame.getAttribute({'selector': 'internal:role=button[name=/^1 /] >> nth=0', 'name': 'aria-expanded', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=button[name=/^1 /] >> nth=0', 'expression': 'to.have.attribute.value', 'expressionArg': 'aria-expanded', 'expectedText': [{'string': 'true', 'matchSubstring': False, 'normalizeWhiteSpace': False}], 'timeout': 10000, 'isNot': False})
+  Frame.isChecked({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:role=checkbox >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:role=checkbox >> nth=0 >> xpath=..', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:role=checkbox >> nth=0', 'expression': 'to.be.checked', 'timeout': 10000, 'expectedValue': {'value': {'o': [{'k': 'checked', 'v': {'b': True}}], 'id': 1}, 'handles': []}, 'isNot': False})
+  Frame.isChecked({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:role=checkbox >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:role=checkbox >> nth=0 >> xpath=..', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:role=checkbox >> nth=0', 'expression': 'to.be.checked', 'timeout': 10000, 'expectedValue': {'value': {'o': [{'k': 'checked', 'v': {'b': True}}], 'id': 1}, 'handles': []}, 'isNot': False})
+  Frame.selectOption({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:role=combobox >> nth=-1', 'strict': True, 'options': [{'valueOrLabel': 'Mbps'}], 'timeout': 30000})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:role=spinbutton', 'value': '500', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:role=spinbutton', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name=/^Port\\ 3\\b/] >> internal:role=spinbutton', 'expression': 'to.have.value', 'expectedText': [{'string': '500', 'matchSubstring': False, 'normalizeWhiteSpace': False}], 'timeout': 10000, 'isNot': False})
+  Frame.selectOption({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:role=combobox >> nth=-1', 'strict': True, 'options': [{'valueOrLabel': 'Mbps'}], 'timeout': 30000})
+  Frame.fill({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:role=spinbutton', 'value': '500', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:role=spinbutton', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name=/^Port\\ 4\\b/] >> internal:role=spinbutton', 'expression': 'to.have.value', 'expectedText': [{'string': '500', 'matchSubstring': False, 'normalizeWhiteSpace': False}], 'timeout': 10000, 'isNot': False})
+  Frame.getAttribute({'selector': 'internal:role=button[name=/^2 /] >> nth=0', 'name': 'aria-expanded', 'strict': True, 'timeout': 30000})
+  Frame.click({'selector': 'internal:role=button[name=/^2 /] >> nth=0', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=button[name=/^2 /] >> nth=0', 'expression': 'to.have.attribute.value', 'expressionArg': 'aria-expanded', 'expectedText': [{'string': 'true', 'matchSubstring': False, 'normalizeWhiteSpace': False}], 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'internal:role=row[name=/^3\\s/] >> internal:role=textbox[name="10.1.0.10"i]', 'value': '10.0.0.1', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'internal:role=row[name=/^3\\s/] >> internal:role=textbox[name="10.1.0.10"i]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.selectOption({'selector': 'internal:role=row[name=/^3\\s/] >> internal:role=combobox >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name=/^3\\s/] >> internal:role=textbox[name="10.1.0.10"i]', 'expression': 'to.have.value', 'expectedText': [{'string': '10.0.0.1', 'matchSubstring': False, 'normalizeWhiteSpace': False}], 'timeout': 10000, 'isNot': False})
+  Frame.getAttribute({'selector': 'internal:role=button[name=/^2 /] >> nth=0', 'name': 'aria-expanded', 'strict': True, 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=button[name=/^2 /] >> nth=0', 'expression': 'to.have.attribute.value', 'expressionArg': 'aria-expanded', 'expectedText': [{'string': 'true', 'matchSubstring': False, 'normalizeWhiteSpace': False}], 'timeout': 10000, 'isNot': False})
+  Frame.fill({'selector': 'internal:role=row[name=/^4\\s/] >> internal:role=textbox[name="10.1.0.10"i]', 'value': '10.0.0.2', 'strict': True, 'timeout': 30000})
+  Frame.press({'selector': 'internal:role=row[name=/^4\\s/] >> internal:role=textbox[name="10.1.0.10"i]', 'key': 'Tab', 'strict': True, 'timeout': 30000})
+  Frame.selectOption({'selector': 'internal:role=row[name=/^4\\s/] >> internal:role=combobox >> nth=0', 'strict': True, 'options': [{'valueOrLabel': '25'}], 'timeout': 30000})
+  Frame.expect({'selector': 'internal:role=row[name=/^4\\s/] >> internal:role=textbox[name="10.1.0.10"i]', 'expression': 'to.have.value', 'expectedText': [{'string': '10.0.0.2', 'matchSubstring': False, 'normalizeWhiteSpace': False}], 'timeout': 10000, 'isNot': False})
+  Frame.getAttribute({'selector': 'internal:role=button[name
+...(truncated)
+```
+Screenshot: `webapp-artifacts/1508f15f-3f8d-462a-a788-a054f8e590c3/1/test-failed-1.png`
+Trace: `webapp-artifacts/1508f15f-3f8d-462a-a788-a054f8e590c3/1/trace.zip`

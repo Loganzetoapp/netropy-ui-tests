@@ -39,12 +39,20 @@ Every control has only a `name` attribute (no labels). Base fields, for each sid
 | `…/outbound/frame/overhead` | `header-fcs` (18), `ethernet` (38), `custom` | `frame/size` (≤300) |
 | `source/inbound/enabled`, `destination/inbound/enabled` | checkbox "ENABLED" (inbound access link) | |
 
+**Which access link shapes which direction** (confirmed 2026-10-16 by a form round trip and the
+stats layout): traffic source → destination enters through `source/outbound` and leaves through
+`destination/inbound` (off unless its ENABLED box is ticked); destination → source uses
+`destination/outbound` then `source/inbound`. So a cap on NTG Port 3 → 4 is
+`source/outbound/bandwidth`, and its queue drops show in that direction's `inflow` stats.
+The form lists the four links in chain order: source/outbound, destination/inbound,
+source/inbound, destination/outbound.
+
 Per direction, `wan/source-to-destination/…` and `wan/destination-to-source/…`:
 
 | Impairment `…/method` | Options | Reveals (defaults) |
 |---|---|---|
 | `delay` | `off`, `constant`, `uniform`, `exponential`, `normal`, `burst` (Accumulate-Burst) | constant `latency` (ms, 0.01 steps); uniform `minimum`/`maximum`; exponential `minimum`/`mean`; normal `mean`/`standard-deviation` (mean ≥ 3σ); burst `count` (≤1000) / `delay` (ms, ≤10000) / `extra`. Variable kinds add `delay/reordering` ("Allow Reordering", off means delay is skewed to keep order) |
-| `loss` | `off`, `random`, `burst`, `periodic`, `two-state` (Gilbert-Elliott), `bit-error-rate` | random `rate` %; burst `probability`/`minimum`/`maximum`; periodic `period`/`burst` (packets); G-E `good/rate`, `good/chance`, `bad/rate`, `bad/chance` (starts "good" each time emulation turns on); BER `coefficient` (1–<10) / `exponent` (≥ −18) |
+| `loss` | `off`, `random`, `burst`, `periodic`, `two-state` (Gilbert-Elliott), `bit-error-rate` | random `rate` % (`…/loss/random/rate`, a text input, default 0; saved as typed, checked 2026-10-16); burst `probability`/`minimum`/`maximum`; periodic `period`/`burst` (packets); G-E `good/rate`, `good/chance`, `bad/rate`, `bad/chance` (starts "good" each time emulation turns on); BER `coefficient` (1–<10) / `exponent` (≥ −18) |
 | `outage` | `off`, `periodic` | `duration` (s), `interval` (s, start-to-start; duration > interval means a continuous outage); ranges like `1-5` allowed |
 | `corruption` | `off`, `bit-error-rate` | `coefficient`/`exponent`. Never touches the Ethernet header or FCS |
 | `reordering` | `off`, `on` | `probability` %, `offset` (packets, or a range `5-12`), `timeout` (ms, default 10000) |
