@@ -36,7 +36,14 @@ class FakeEmulator:
         self.current = EngineState(on, self.current.actions)
 
     def delete_path(self, label):
+        assert not any(e.endswith(label) for e in getattr(self, "endpoints", [])), (
+            f"path {label} deleted while an endpoint uses it"
+        )
         self.paths.remove(label)
+        self.deleted.append(label)
+
+    def delete_endpoint(self, label):
+        self.endpoints.remove(label)
         self.deleted.append(label)
 
 
@@ -45,7 +52,8 @@ class FakeApi:
         self.emulator, self.rate = emulator, rate
 
     def engine(self, index):
-        return {"path": [{"label": label, "index": i + 1} for i, label in enumerate(self.emulator.paths)]}
+        return {"path": [{"label": label, "index": i + 1} for i, label in enumerate(self.emulator.paths)],
+                "endpoint": [{"label": label} for label in getattr(self.emulator, "endpoints", [])]}
 
     def stats_summary(self, engine, paths):
         return {"flow": [{"index": i, "rate": self.rate} for i in paths]}
@@ -124,3 +132,12 @@ def test_t0_lease_leaves_a_changed_engine_alone(tmp_path):
     emulator = FakeEmulator(someone_new)
     assert lease.restore(emulator).startswith("NOT restored")
     assert emulator.current == someone_new and (tmp_path / "lease.json").exists()
+
+
+@pytest.mark.hardware_free
+def test_t0_preflight_deletes_our_endpoints_before_their_paths():
+    emulator = FakeEmulator(IDLE, paths=["Default Path", "t21-udp-loss"])
+    emulator.endpoints = ["t21-udp-loss-p3", "their-endpoint"]
+    _preflight(emulator)._leftover_paths()
+    assert emulator.deleted == ["t21-udp-loss-p3", "t21-udp-loss"]
+    assert emulator.endpoints == ["their-endpoint"] and emulator.paths == ["Default Path"]

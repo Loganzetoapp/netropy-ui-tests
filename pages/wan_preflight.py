@@ -11,7 +11,7 @@ someone else's setup.
 | Ports 3/4 free, or held by this test's own testbed | skip: someone else's testbed |
 | Ports 3/4 links up (waits up to 30 s: they flap) at a speed >= the spec's rate | link still down: system failure. Too slow: fail, this spec can't run on this bench |
 | Engine 2 idle: Emulation off, both Default Actions Bypass | our own leftover (a t0-lib-/t15-/t16-/t17- path) is cleaned up. Someone else's setup: skip while traffic flows through it; when it's idle, borrow it if WAN_BORROW_IDLE_ENGINE=true (put back at session end, see EngineLease), else skip and say how to allow it |
-| No leftover paths of ours on Engine 2 | deleted |
+| No leftover endpoints or paths of ours on Engine 2 | deleted (endpoints first: a path an endpoint uses can't be deleted) |
 
 Why borrowing is opt-in: from the emulator's settings alone, a setup
 someone parked looks the same as one they're about to use again. The
@@ -28,7 +28,8 @@ from pages.errors import PortsBusyError, SystemBadStateError
 from pages.wan_emulator_page import EngineState
 
 # Path names the suite's own tests create (WanPathSpec names).
-OUR_PATH_PREFIXES = ("t0-lib-", "t15-", "t16-", "t17-")
+# Endpoints (T21) are named after their path, so the same prefixes cover them.
+OUR_PATH_PREFIXES = ("t0-lib-", "t15-", "t16-", "t17-", "t18-", "t19-", "t20-", "t21-")
 LEASE_FILE = settings.ROOT / "results" / "wan-engine-borrowed.json"
 # Traffic through the engine is sampled twice this far apart: the
 # emulator's `rate` is a one-second figure.
@@ -183,12 +184,16 @@ class WanPreflight:
         return peak
 
     def _leftover_paths(self) -> None:
-        labels = [p["label"] for p in self.api.engine(self.emulator.ENGINE_INDEX).get("path", [])]
-        leftovers = [label for label in labels if is_ours(label)]
-        if not leftovers:
-            self._note("No leftover paths of ours", "ok")
+        engine = self.api.engine(self.emulator.ENGINE_INDEX)
+        endpoints = [e["label"] for e in engine.get("endpoint", []) if is_ours(e.get("label", ""))]
+        leftovers = [p["label"] for p in engine.get("path", []) if is_ours(p["label"])]
+        if not endpoints and not leftovers:
+            self._note("No leftover endpoints or paths of ours", "ok")
             return
         self.emulator.open_engine()
+        for label in endpoints:
+            self.emulator.delete_endpoint(label)
         for label in leftovers:
             self.emulator.delete_path(label)
-        self._note("No leftover paths of ours", f"deleted {leftovers}")
+        self._note("No leftover endpoints or paths of ours",
+                   f"deleted endpoints {endpoints}, paths {leftovers}")

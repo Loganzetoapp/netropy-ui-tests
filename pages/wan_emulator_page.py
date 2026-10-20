@@ -18,6 +18,10 @@ control has an accessible name. Path-form controls carry only a `name`
 named "port-a"/"port-b", and the Paths "+" and per-path gear are icon-only
 links. These attribute selectors are the only stable handles until the
 emulator gets labels or data-testids.
+
+Added 2026-10-19 for T18-T21 and checked by tests/t0_library/
+test_t0_wan_library.py (no traffic): edit_path, create_path_from_preset
+(a hover menu) and the endpoint methods.
 """
 import contextlib
 import re
@@ -30,7 +34,7 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from pages import settings
 from pages.base_page import BasePage
 from pages.errors import PortsBusyError
-from pages.wan_path_spec import WanPathSpec
+from pages.wan_path_spec import EndpointSpec, WanPathSpec
 
 # Default Action and Emulation changes save asynchronously, with no
 # feedback. Reloading too soon aborts the save, and two changes in quick
@@ -154,40 +158,119 @@ class WanEmulatorPage(BasePage):
         page = self.page
         page.locator("a[href='/path/create']").click()
         page.get_by_placeholder("Enter Path Name...").fill(spec.name)
-        for key, value in spec.form_fields().items():
-            control = page.locator(f"[name='{key}']")
-            if control.evaluate("e => e.tagName") == "SELECT":
+        self._fill(spec.form_fields())
+        page.get_by_role("button", name="Create Path").click()
+        expect(self._path_link(spec.name)).to_be_visible(timeout=15_000)
+
+    def _fill(self, values: Dict[str, str]) -> None:
+        """Type {form control name: value} into the open form, in order
+        (method selects come first: they reveal their value inputs)."""
+        for key, value in values.items():
+            control = self.page.locator(f"[name='{key}']")
+            kind = control.evaluate("e => e.tagName === 'SELECT' ? 'select' : e.type")
+            if kind == "checkbox":
+                control.set_checked(value == "true")
+                continue
+            if kind == "select":
                 control.select_option(value)
             else:
                 control.fill(value)
                 control.press("Tab")
             expect(control).to_have_value(value)
+
+    def create_path_from_preset(self, name: str, group: str, preset: str) -> None:
+        """Create path `name` from a built-in preset. The folder icon right
+        of the name box opens a menu of groups (Cellular / Wi-Fi /
+        Satellite / AWS / Cable / SD-WAN); each opens its items on *hover*
+        (clicking a group closes the menu). `preset` is the item's exact
+        text, e.g. "4G LTE", "GEO", "802.11n" (mapped 2026-10-19)."""
+        page = self.page
+        page.locator("a[href='/path/create']").click()
+        name_box = page.get_by_placeholder("Enter Path Name...")
+        name_box.locator("xpath=following::button[1]").click()
+        menu = page.locator(".dropright").filter(has=page.locator("label").get_by_text(group, exact=True))
+        menu.locator(".hover-dropdown").hover()
+        menu.locator(".dropdown-item").get_by_text(preset, exact=True).click()
+        # Fill the name last: picking a preset may overwrite it.
+        name_box.fill(name)
         page.get_by_role("button", name="Create Path").click()
-        expect(self._path_link(spec.name)).to_be_visible(timeout=15_000)
+        expect(self._path_link(name)).to_be_visible(timeout=15_000)
+
+    def _open_manage(self, name: str) -> None:
+        """A path's own page, behind its row's gear icon (an unlabelled
+        <a href=".../manage">); clicking the name opens its stats instead."""
+        row = self.page.locator(".list-group.paths .list-group-item").filter(
+            has=self.page.get_by_text(name, exact=True)
+        )
+        row.locator("a[href$='/manage']").click()
+
+    def edit_path(self, spec: WanPathSpec) -> None:
+        """Change existing path `spec.name` to `spec` with Apply Changes.
+        Works while traffic flows through it (T19b). The save is
+        asynchronous; callers confirm it through the API."""
+        self.open_engine()
+        self._open_manage(spec.name)
+        self._fill(spec.form_fields())
+        self.page.get_by_role("button", name="Apply Changes").click()
 
     def delete_path(self, name: str) -> None:
         """Delete path `name` if it exists. It must not be a Default Action."""
         if self._path_link(name).count() == 0:
             return
         page = self.page
-        # Clicking the name opens its stats; Delete lives behind the row's
-        # gear icon (an unlabelled <a href=".../manage">).
-        row = page.locator(".list-group.paths .list-group-item").filter(
-            has=page.get_by_text(name, exact=True)
-        )
-        row.locator("a[href$='/manage']").click()
+        self._open_manage(name)
         # Accept a native confirm() if there is one (Playwright would dismiss it).
         page.once("dialog", lambda dialog: dialog.accept())
         page.get_by_role("button", name="Delete Path").click()
-        confirm = page.get_by_role("button", name=re.compile(r"^(Delete|Remove|OK|Yes)$"))
+        self._confirm_if_asked()
+        self.open_engine()
+        expect(self._path_link(name)).to_have_count(0, timeout=15_000)
+
+    def _confirm_if_asked(self) -> None:
+        confirm = self.page.get_by_role("button", name=re.compile(r"^(Delete|Remove|OK|Yes)$"))
         try:
             confirm.first.wait_for(state="visible", timeout=2_000)
         except PlaywrightTimeoutError:
             pass
         else:
             confirm.first.click()
+
+    # --- endpoints ------------------------------------------------------
+    def _endpoint_row(self, label: str):
+        # Endpoints are listed under "Endpoints N" like paths, one
+        # .list-group-item each; labels never equal a path's (EndpointSpec).
+        return self.page.locator(".list-group-item").filter(
+            has=self.page.get_by_text(label, exact=True))
+
+    def _endpoint_link(self, label: str):
+        return self._endpoint_row(label)
+
+    def create_endpoint(self, spec: EndpointSpec) -> None:
+        """Create endpoint `spec` on the current engine; its path must exist.
+        The form ("Create Endpoint") offers this engine's two ports, TCP/UDP,
+        and an action select whose options are the paths by label."""
+        page = self.page
+        page.locator("a[href='/endpoint/create']").click()
+        self._fill(spec.form_fields())
+        page.locator("select[name='action']").select_option(label=spec.path)
+        page.get_by_role("button", name="Create Endpoint").click()
+        # Leaving the page before the save lands loses it, as with paths.
+        expect(page).not_to_have_url(re.compile(r"/endpoint/create"), timeout=15_000)
         self.open_engine()
-        expect(self._path_link(name)).to_have_count(0, timeout=15_000)
+        expect(self._endpoint_row(spec.label)).to_be_visible(timeout=15_000)
+
+    def delete_endpoint(self, label: str) -> None:
+        """Delete endpoint `label` if it exists (the same gear-page flow as
+        a path)."""
+        if self._endpoint_link(label).count() == 0:
+            return
+        page = self.page
+        page.once("dialog", lambda dialog: dialog.accept())
+        self._endpoint_row(label).locator("a[href$='/manage']").click()
+        page.get_by_role("button", name=re.compile(r"^Delete")).click()
+        self._confirm_if_asked()
+        self.open_engine()
+        expect(self._endpoint_link(label)).to_have_count(0, timeout=15_000)
 
     @contextlib.contextmanager
     def path_created(self, spec: WanPathSpec):
@@ -218,3 +301,29 @@ class WanEmulatorPage(BasePage):
                 self.open_engine()
                 self.set_emulation(False)
                 self.set_default_actions("Bypass")
+
+    @contextlib.contextmanager
+    def routed(self, paths, endpoints):
+        """Traffic split across several paths by endpoints, for the block
+        (T21). Default Actions stay Bypass, so anything no endpoint
+        matches (ARP) goes straight through. Requires an idle engine and
+        leaves it idle: Emulation off, endpoints deleted, then paths (a
+        path can't be deleted while an endpoint uses it)."""
+        self.open_engine()
+        self.require_idle()
+        try:
+            for spec in paths:
+                self.delete_path(spec.name)
+                self.create_path(spec)
+                self.open_engine()
+            for endpoint in endpoints:
+                self.create_endpoint(endpoint)
+            self.set_emulation(True)
+            yield
+        finally:
+            self.open_engine()
+            self.set_emulation(False)
+            for endpoint in endpoints:
+                self.delete_endpoint(endpoint.label)
+            for spec in paths:
+                self.delete_path(spec.name)

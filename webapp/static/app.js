@@ -1349,7 +1349,8 @@ function renderChecksTable(checks) {
   if (!checks || checks.length === 0) return "";
   const rows = checks
     .map((c) => {
-      const isMin = c.kind === "min";
+      const isMin = c.kind === "min" || c.kind === "max";
+      const bound = c.kind === "max" ? "≤ " : "≥ ";
       const delta =
         !isMin && typeof c.measured === "number" && typeof c.expected === "number" ? c.measured - c.expected : null;
       const tol = isMin
@@ -1359,7 +1360,7 @@ function renderChecksTable(checks) {
           : "exact";
       return `<tr class="${!c.ok ? "row-bad" : ""}">
         <td>${escapeHtml(c.name)}</td>
-        <td class="num">${isMin ? "≥ " : ""}${fmtCheckValue(c.expected, c.unit)}</td>
+        <td class="num">${isMin ? bound : ""}${fmtCheckValue(c.expected, c.unit)}</td>
         <td class="num">${fmtCheckValue(c.measured, c.unit)}</td>
         <td class="num">${delta === null ? "—" : (delta > 0 ? "+" : "") + fmtCheckValue(delta, c.unit)}</td>
         <td class="num">${tol}</td>

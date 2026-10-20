@@ -19,6 +19,7 @@ Shape:
 """
 import json
 import pathlib
+import re
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path(__file__).parent
@@ -33,6 +34,9 @@ _DIRECTION_KEYS = (
     "from-port", "to-port", "tx-frames", "rx-frames", "dropped", "loss-pct",
     "avg-latency", "min-latency", "max-latency", "avg-jitter",
 )
+_FLOW_KEYS = ("flow-id", "name", "stream", "protocol")
+# Order/duplicate counters, by name ("late" as a whole word: not "latency").
+SEQUENCE_KEY = re.compile(r"order|dup|\blate\b|seq", re.I)
 _PORT_KEYS = (
     "port-id", "avg-tx-rate", "avg-rx-rate", "tx-frames", "rx-frames", "dropped",
     "loss-pct", "avg-latency", "nic-tx-errors", "nic-rx-errors", "rx-missed", "rx-no-mbuf",
@@ -43,14 +47,25 @@ def _pick(d: dict, keys) -> dict:
     return {k: d[k] for k in keys if k in d}
 
 
+def _direction(d: dict) -> dict:
+    """A saved direction's history fields, plus any counter about order or
+    duplicates the NTG reports (names not documented; T18b looks for them)."""
+    picked = _pick(d, _DIRECTION_KEYS)
+    picked.update({k: v for k, v in d.items()
+                   if SEQUENCE_KEY.search(k) and isinstance(v, (int, float, bool))})
+    return picked
+
+
 def ntg_run_digest(run: dict) -> dict:
     """The parts of an NTG saved run (NtgApi.run()) that go into history.
-    Latencies/jitter are in µs, as the NTG reports them."""
-    directions = [
-        _pick(d, _DIRECTION_KEYS)
+    Latencies/jitter are in µs, as the NTG reports them. `direction` is
+    every flow's directions in one list; `flow` keeps them per flow (one
+    flow per stream), for tests that send streams different ways (T21)."""
+    flows = [
+        {**_pick(flow, _FLOW_KEYS), "direction": [_direction(d) for d in flow.get("direction") or []]}
         for flow in run.get("flow") or []
-        for d in flow.get("direction") or []
     ]
+    directions = [d for flow in flows for d in flow["direction"]]
     return {
         "run-id": run.get("run-id"),
         "number": run.get("number"),
@@ -60,6 +75,7 @@ def ntg_run_digest(run: dict) -> dict:
         "summary": _pick(run.get("summary") or {}, _SUMMARY_KEYS),
         "port": [_pick(p, _PORT_KEYS) for p in run.get("port") or []],
         "direction": directions,
+        "flow": flows,
     }
 
 
@@ -171,6 +187,15 @@ class RunMetrics:
         self.record["checks"].append({
             "name": name, "expected": minimum, "measured": measured, "tolerance": None,
             "kind": "min", "unit": unit, "ok": ok, "enforced": enforced,
+        })
+        return ok
+
+    def at_most(self, name, maximum, measured, unit="", enforced=True) -> bool:
+        """Record measured <= maximum (shown as "≤ maximum" on the dashboard)."""
+        ok = measured is not None and measured <= maximum
+        self.record["checks"].append({
+            "name": name, "expected": maximum, "measured": measured, "tolerance": None,
+            "kind": "max", "unit": unit, "ok": ok, "enforced": enforced,
         })
         return ok
 
