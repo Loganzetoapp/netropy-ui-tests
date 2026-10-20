@@ -1,0 +1,85 @@
+{
+  "run_id": "20261012T052259Z",
+  "run_code": "RUN-147",
+  "timestamp": "2026-10-12T05:22:59Z",
+  "git_sha": "7def17d",
+  "git_branch": "shared-pages-library",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.9",
+  "duration": 146.097,
+  "tests": [
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_dashboard_create_and_remove_testbed[chromium]",
+      "outcome": "pass",
+      "duration": 7.226,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_create_testbed_rejects_names_over_15_chars[chromium]",
+      "outcome": "pass",
+      "duration": 1.092,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_ports_step_rate_direction[chromium]",
+      "outcome": "pass",
+      "duration": 11.525,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_full_spec_is_stored[chromium]",
+      "outcome": "fail",
+      "duration": 33.082,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_label(re.compile(r\"Quantity\", re.IGNORECASE))",
+      "screenshot": "artifacts/tests-t0-library-test-t0-library-contract-py-test-t0-editor-full-spec-is-stored-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_full_spec_is_stored[chromium]",
+      "outcome": "error",
+      "duration": 30.085,
+      "failure_message": "failed on teardown with \"playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"button\", name=\"\u2190 Dashboard\")\n    - locator resolved to <button class=\"btn btn-outline\">\u2190 Dashboard</button>\n  - attempting click action\n    2 \u00d7 waiting for element to be visible, enabled and stable\n      - element is visible, enabled and stable\n      - scrolling into view if needed\n      - done scrolling\n      - <div class=\"modal-overlay\">\u2026</div> from <d",
+      "screenshot": "artifacts/tests-t0-library-test-t0-library-contract-py-test-t0-editor-full-spec-is-stored-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_load_profile_toggle_and_ramp[chromium]",
+      "outcome": "pass",
+      "duration": 11.807,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_gateway_next_hop[chromium]",
+      "outcome": "fail",
+      "duration": 35.254,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"row\", name=re.compile(r\"^1\\s\")).get_by_role(\"textbox\", name=re.compile(r\"gateway\", re.IGNORECASE))",
+      "screenshot": "artifacts/tests-t0-library-test-t0-library-contract-py-test-t0-editor-gateway-next-hop-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_speaker1_facade_builds_their_config[chromium]",
+      "outcome": "pass",
+      "duration": 14.384,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_port_holders_reads_ownership[chromium]",
+      "outcome": "pass",
+      "duration": 1.25,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

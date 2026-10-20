@@ -1,0 +1,166 @@
+{
+  "run_id": "20261012T063318Z",
+  "run_code": "RUN-165",
+  "timestamp": "2026-10-12T06:33:18Z",
+  "git_sha": "2c2cc15",
+  "git_branch": "shared-pages-library",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.9",
+  "duration": 83.863,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_default_addressing_activation.py::test_t10_default_addressing_activation[chromium]",
+      "outcome": "fail",
+      "duration": 83.826,
+      "failure_message": "AssertionError: T10-DefaultAddr: verdict 'fail'; failed checks [('run: frames received', 0)]; saved run row: '#1LATEST\\t10/11/2026, 11:32:52 PM\\t0:00:46\\t0:00:49\\t15.542 Gbps\\t0.0 Mbps\\t100.000 %\\t\\nFAIL\\n\u2699\\n\\t\\nPDF\\nXLSX\\nCSV\\nJSON\\nFULL\\nZIP\\n\\t'",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-default-addressing-activation-py-test-t10-default-addressing-activation-chromium/test-failed-1.png",
+      "trace": null,
+      "metrics": {
+        "test": "tests/t10_t12_lifecycle/test_t10_default_addressing_activation.py::test_t10_default_addressing_activation[chromium]",
+        "unit": {
+          "model": "NTG10G4",
+          "version": "5.0.9",
+          "target": "http://192.168.173.212"
+        },
+        "impairment": null,
+        "checks": [
+          {
+            "name": "run: frames sent",
+            "expected": 1,
+            "measured": 59055048,
+            "tolerance": null,
+            "kind": "min",
+            "unit": "frames",
+            "ok": true,
+            "enforced": true
+          },
+          {
+            "name": "run: frames received",
+            "expected": 1,
+            "measured": 0,
+            "tolerance": null,
+            "kind": "min",
+            "unit": "frames",
+            "ok": false,
+            "enforced": true
+          },
+          {
+            "name": "run: loss %",
+            "expected": 0.0,
+            "measured": 100.0,
+            "tolerance": 0.01,
+            "unit": "%",
+            "ok": false,
+            "enforced": false
+          },
+          {
+            "name": "run: NTG Port 1 avg TX = configured rate",
+            "expected": 10000,
+            "measured": 7771.107,
+            "tolerance": 1500.0,
+            "unit": "Mbps",
+            "ok": false,
+            "enforced": false
+          },
+          {
+            "name": "run: NTG Port 2 avg TX = configured rate",
+            "expected": 10000,
+            "measured": 7771.107,
+            "tolerance": 1500.0,
+            "unit": "Mbps",
+            "ok": false,
+            "enforced": false
+          },
+          {
+            "name": "run: run length",
+            "expected": 46,
+            "measured": 26.0,
+            "tolerance": 3,
+            "unit": "s",
+            "ok": false,
+            "enforced": false
+          }
+        ],
+        "written-at": "2026-10-12T06:33:18.110932+00:00",
+        "runs": [
+          {
+            "label": "run",
+            "ntg": {
+              "run-id": "1791786821886",
+              "number": 1,
+              "end-reason": "completed",
+              "tail-not-settled": false,
+              "stages": {
+                "ramp-up-sec": 10.0,
+                "main-sec": 26.0,
+                "ramp-down-sec": 10.0,
+                "tail-sec": 3.889
+              },
+              "summary": {
+                "tx-rate": 15542.215,
+                "rx-rate": 0.0,
+                "tx-frames": 59055048,
+                "rx-frames": 0,
+                "loss-frames": 59055048,
+                "loss-pct": 100.0,
+                "duration": 48.0
+              },
+              "port": [
+                {
+                  "port-id": 1,
+                  "avg-tx-rate": 7771.107,
+                  "avg-rx-rate": 0.0,
+                  "tx-frames": 29527524,
+                  "rx-frames": 0
+                },
+                {
+                  "port-id": 2,
+                  "avg-tx-rate": 7771.107,
+                  "avg-rx-rate": 0.0,
+                  "tx-frames": 29527524,
+                  "rx-frames": 0
+                }
+              ],
+              "direction": [
+                {
+                  "from-port": 1,
+                  "to-port": 2,
+                  "tx-frames": 29527492,
+                  "rx-frames": 0,
+                  "dropped": 29527492,
+                  "loss-pct": 100.0
+                },
+                {
+                  "from-port": 2,
+                  "to-port": 1,
+                  "tx-frames": 29527524,
+                  "rx-frames": 0,
+                  "dropped": 29527524,
+                  "loss-pct": 100.0
+                }
+              ],
+              "verdict": "fail",
+              "criteria": null,
+              "duration-sec": 26.0,
+              "configured-ports": [
+                {
+                  "port-id": 1,
+                  "rate-mbps": 10000,
+                  "speed-mbps": 10000
+                },
+                {
+                  "port-id": 2,
+                  "rate-mbps": 10000,
+                  "speed-mbps": 10000
+                }
+              ]
+            },
+            "wan": null
+          }
+        ]
+      },
+      "metrics_file": "results/metrics/tests-t10-t12-lifecycle-test-t10-default-addressing-activation-py-test-t10-default-addressing-activation-chromium-20261012T063318Z.json"
+    }
+  ]
+}

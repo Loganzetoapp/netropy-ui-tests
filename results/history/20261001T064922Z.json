@@ -1,0 +1,20 @@
+{
+  "run_id": "20261001T064922Z",
+  "run_code": "RUN-104",
+  "timestamp": "2026-10-01T06:49:22Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.89",
+  "duration": 13.921,
+  "tests": [
+    {
+      "nodeid": "tests/test_zz_probe_tmp.py::test_probe[chromium]",
+      "outcome": "pass",
+      "duration": 13.912,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

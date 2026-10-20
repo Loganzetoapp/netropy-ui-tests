@@ -12,6 +12,7 @@ import re
 import pytest
 from dotenv import load_dotenv
 from playwright.sync_api import Page, expect
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 load_dotenv()
 
@@ -30,17 +31,23 @@ SESSION_STORAGE_FILE = pathlib.Path(__file__).parent / ".auth_session_storage.js
 # Default timeout for expect() assertions (ms)
 expect.set_options(timeout=10_000)
 
-# The appliance silently accepts and saves a testbed name longer than this,
-# then permanently 502s on activate for that object — no validation at
-# creation time, no maxlength on the wizard's name field (see project bugs
-# memory, 2026-09-09). Any test that creates a testbed it's going to
-# activate should call assert_activatable_name() on the name right after
-# defining it, so a future violation fails fast and clearly at collection
-# time instead of a mysterious 75s hang + 502 deep into the test.
-MAX_ACTIVATABLE_TESTBED_NAME_LEN = 15
+# The page objects in pages/ hold every selector; the helpers below are
+# thin shims kept so existing tests' imports keep working. New tests use
+# pages/ (or the traffic_engine fixture) directly.
+from pages import settings as _settings
+from pages.dashboard_page import DashboardPage
+from pages.errors import PortsBusyError, SystemBadStateError  # noqa: F401  (re-exported)
+from pages.login_page import LoginPage
+from pages.run_page import RunPage
+from pages.testbed_editor_page import START_POPUP_TITLE, TestbedEditorPage  # noqa: F401
+from pages.unit_health import UnitHealth
+
+MAX_ACTIVATABLE_TESTBED_NAME_LEN = _settings.MAX_TESTBED_NAME_LEN
 
 
 def assert_activatable_name(name: str) -> None:
+    """The appliance saves a testbed name over 15 chars, then permanently
+    502s on activate for it (project bugs, 2026-09-09): fail fast instead."""
     assert len(name) <= MAX_ACTIVATABLE_TESTBED_NAME_LEN, (
         f"Testbed name {name!r} is {len(name)} chars, over the "
         f"{MAX_ACTIVATABLE_TESTBED_NAME_LEN}-char limit this appliance "
@@ -49,19 +56,78 @@ def assert_activatable_name(name: str) -> None:
     )
 
 
+def assert_unit_healthy(page: Page, context: str = "") -> None:
+    UnitHealth(page).assert_healthy(context)
+
+
+def start_testbed(page: Page, start_button=None, timeout: int = 90_000) -> None:
+    TestbedEditorPage(page).start(start_button, timeout)
+
+
+def testbed_tile(page: Page, name: str):
+    return DashboardPage(page).testbed_entry(name)
+
+
+def create_testbed(page: Page, name: str):
+    return DashboardPage(page).create_testbed(name)
+
+
+def open_editor(page: Page, name: str) -> None:
+    DashboardPage(page).open_editor(name)
+
+
+def enable_ports(page: Page, ports, rate: str = None, unit: str = "Gbps") -> None:
+    TestbedEditorPage(page).enable_ports(ports, rate, unit)
+
+
+def open_step(page: Page, number: int) -> None:
+    TestbedEditorPage(page).open_step(number)
+
+
+def set_addressing(page: Page, ports, ips, cidr: int) -> None:
+    TestbedEditorPage(page).set_addressing(ports, ips, cidr)
+
+
+def add_stream(page: Page, protocol: str, quantity: int = 1) -> None:
+    TestbedEditorPage(page).add_stream(protocol, quantity)
+
+
+def set_all_frame_sizes(page: Page, size: int) -> None:
+    TestbedEditorPage(page).set_all_frame_sizes(size)
+
+
+def set_stream_frame_size(page: Page, index: int, size: int) -> None:
+    TestbedEditorPage(page).set_stream_frame_size(index, size)
+
+
+def set_ramp(page: Page, up: int, hold: int, down: int) -> None:
+    TestbedEditorPage(page).set_ramp(up, hold, down)
+
+
+def wait_for_run_to_finish(page: Page, run_number: int = 1, timeout: int = 5 * 60_000):
+    return RunPage(page).wait_for_run_to_finish(run_number, timeout)
+
+
+def assert_run_passed(row) -> None:
+    verdict = RunPage.verdict(row)
+    assert verdict == "pass", f"run verdict {verdict!r}; saved run row: {row.inner_text()!r}"
+
+
+def run_verdict(row) -> str:
+    return RunPage.verdict(row)
+
+
+def go_to_dashboard(page: Page) -> None:
+    DashboardPage(page).open()
+
+
+def remove_testbed(page: Page, name: str) -> None:
+    DashboardPage(page).remove_testbed(name)
+
+
 def _login(page: Page) -> None:
-    """Log in through the UI."""
-    page.goto(BASE_URL)
-    # If we land on the dashboard already, session is valid
-    try:
-        page.wait_for_selector("text=Port Status", timeout=3000)
-        return
-    except Exception:
-        pass
-    page.get_by_placeholder("username").fill(USERNAME)
-    page.get_by_placeholder("password").fill(PASSWORD)
-    page.get_by_role("button", name="Sign in").click()
-    expect(page.get_by_text("Port Status")).to_be_visible()
+    """Log in through the UI (returns at once if the session is valid)."""
+    LoginPage(page).login(url=BASE_URL)
 
 
 @pytest.fixture(scope="session")
@@ -70,6 +136,14 @@ def auth_state(browser) -> dict:
     context = browser.new_context(base_url=BASE_URL)
     page = context.new_page()
     _login(page)
+    # Run the whole suite against the product's Dark mode (topbar gear menu
+    # -> "Dark mode") rather than its light-mode default. The toggle just
+    # flips localStorage["tgen-theme"] between "light"/"dark" (confirmed by
+    # inspecting it directly) with no server-side/account-level component,
+    # so setting it here — before the storage_state() snapshot below — is
+    # equivalent to clicking it, and every test's fresh context inherits it
+    # for free via the same storage_state replay that already carries auth.
+    page.evaluate("() => localStorage.setItem('tgen-theme', 'dark')")
     context.storage_state(path=str(STATE_FILE))
     session_storage = json.loads(page.evaluate("() => JSON.stringify(sessionStorage)"))
     SESSION_STORAGE_FILE.write_text(json.dumps(session_storage))
@@ -87,6 +161,14 @@ def page(browser, auth_state, request, pytestconfig) -> Page:
     init_script = "".join(
         f"window.sessionStorage.setItem({json.dumps(key)}, {json.dumps(value)});"
         for key, value in session_storage.items()
+    )
+    # NTG 5.0 defaults the Testbeds section to table view; every helper in
+    # this suite scopes to card tiles (.tb-tile). Pin the user's own view
+    # preference to cards — only when unset, so a test that flips the
+    # Card/Table toggle mid-test isn't reverted on its next navigation.
+    init_script += (
+        "try{if(!localStorage.getItem('tgen-tb-view'))"
+        "localStorage.setItem('tgen-tb-view','cards')}catch(e){}"
     )
     context.add_init_script(init_script)
 
@@ -154,7 +236,135 @@ def dashboard(page: Page) -> Page:
     """A page already sitting on the dashboard."""
     page.goto("/")
     expect(page.get_by_text("Port Status")).to_be_visible()
+    wait_for_testbeds_loaded(page)
     return page
+
+
+@pytest.fixture
+def wan_page(browser) -> Page:
+    """A logged-in page on the WAN emulator chained between NTG Port 3 and
+    Port 4 (pages/wan_emulator_page.py). Its own browser context, so it
+    never shares state with the NTG `page`. Skips when WAN_EMULATOR_URL is
+    unset."""
+    from pages.wan_emulator_page import WanEmulatorPage
+
+    if not _settings.WAN_URL:
+        pytest.skip("WAN_EMULATOR_URL not set in .env")
+    context = browser.new_context(base_url=_settings.WAN_URL)
+    pg = context.new_page()
+    WanEmulatorPage(pg).login()
+    yield pg
+    context.close()
+
+
+@pytest.fixture(scope="session")
+def wan_engine_lease(browser):
+    """Someone else's idle Engine 2 setup that WAN tests borrowed this
+    session (only with WAN_BORROW_IDLE_ENGINE=true), put back when the
+    session ends. See pages/wan_preflight.py."""
+    from pages.wan_emulator_page import WanEmulatorPage
+    from pages.wan_preflight import EngineLease
+
+    lease = EngineLease()
+    yield lease
+    if lease.original is None:
+        return
+    context = browser.new_context(base_url=_settings.WAN_URL)
+    try:
+        emulator = WanEmulatorPage(context.new_page())
+        emulator.login()
+        print(f"\nWAN emulator Engine 2: {lease.restore(emulator)}")
+    finally:
+        context.close()
+
+
+@pytest.fixture
+def wan_bench(traffic_engine, wan_page: Page, run_metrics, wan_engine_lease, request):
+    """NTG Port 3 -> emulator Engine 2 -> NTG Port 4 as one bench
+    (pages/wan_bench.py). Pre-run checks (pages/wan_preflight.py) run
+    before its first run: busy ports or an Engine 2 in use skip the test."""
+    from pages.wan_bench import WanBench
+    from pages.wan_emulator_page import WanEmulatorPage
+    from wan_api import WanApi
+
+    return WanBench(traffic_engine, WanEmulatorPage(wan_page),
+                    WanApi(_settings.WAN_URL, _settings.WAN_USER, _settings.WAN_PASS),
+                    run_metrics, request.node.nodeid, lease=wan_engine_lease)
+
+
+@pytest.fixture
+def run_metrics(request):
+    """A RunMetrics (run_metrics.py) for the test to fill in. Written to
+    results/metrics/ on teardown, pass or fail, and linked into the run
+    history through the junit property `metrics`."""
+    from run_metrics import RunMetrics
+    from scripts.artifact_paths import slugify
+
+    metrics = RunMetrics(request.node.nodeid)
+    yield metrics
+    path = metrics.write(slugify(request.node.nodeid))
+    request.node.user_properties.append(
+        ("metrics", str(path.relative_to(pathlib.Path(__file__).parent)))
+    )
+
+
+@pytest.fixture
+def clean_up(dashboard: Page, request):
+    """Remove the module's draft testbed(s) before and after the test:
+    `NAME`, plus any in an optional `CLEANUP_NAMES` list. Hardware-free
+    tests use this with DashboardPage.open_draft()."""
+    names = list(getattr(request.module, "CLEANUP_NAMES", ())) or [request.module.NAME]
+    board = DashboardPage(dashboard)
+    for name in names:
+        board.remove_testbed(name)
+    yield
+    for name in names:
+        board.remove_testbed(name)
+
+
+@pytest.fixture
+def traffic_engine(dashboard: Page, run_metrics, request):
+    """The high-level library (pages/traffic_engine.py) on a logged-in
+    dashboard, recording onto this test's summary sheet. Teardown removes
+    every testbed it created, and only those. Ports held by someone else
+    make the test skip (see pytest_runtest_makereport), never steal."""
+    from pages.traffic_engine import TrafficEngine
+
+    engine = TrafficEngine(dashboard, run_metrics)
+    yield engine
+    try:
+        engine.cleanup()
+    except Exception as exc:
+        rep = getattr(request.node, "rep_call", None)
+        if rep is not None and rep.failed:
+            # The test already failed (maybe the unit is down); a cleanup
+            # error now would only bury that failure under a teardown one.
+            print(f"[traffic_engine] cleanup after a failed test also failed: {exc}")
+        else:
+            raise
+
+
+def wait_for_testbeds_loaded(page: Page) -> None:
+    DashboardPage(page).wait_loaded()
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Expose each phase's report as item.rep_<phase> (the page fixture's
+    screenshot/trace logic reads rep_call — nothing set it before, so it
+    treated every test as failed), and tag SystemBadStateError failures
+    with a `failure_kind=system` junit property for the run history."""
+    outcome = yield
+    rep = outcome.get_result()
+    if call.excinfo is not None and call.excinfo.errisinstance(PortsBusyError):
+        # Shared box: someone else holds the ports. Not a failure; skip.
+        rep.outcome = "skipped"
+        rep.longrepr = (str(item.fspath), item.location[1], f"Skipped: {call.excinfo.value}")
+    setattr(item, f"rep_{rep.when}", rep)
+    if call.excinfo is not None and call.excinfo.errisinstance(SystemBadStateError):
+        # On the item, not this report: junitxml writes properties from the
+        # teardown report, which copies item.user_properties when created.
+        item.user_properties.append(("failure_kind", "system"))
 
 
 @pytest.hookimpl(trylast=True)

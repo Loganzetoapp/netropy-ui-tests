@@ -1,0 +1,20 @@
+{
+  "run_id": "20261001T064901Z",
+  "run_code": "RUN-103",
+  "timestamp": "2026-10-01T06:49:01Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 38.709,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_t12_lifecycle_udp_1gbps_1500b.py::test_t10_t12_lifecycle_udp_1gbps_1500b[chromium]",
+      "outcome": "fail",
+      "duration": 38.598,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.fill: Timeout 30000ms exceeded.\nCall log:\n  - waiting for get_by_role(\"button\", name=\"Apply to all\", exact=True).locator(\"..\").get_by_role(\"spinbutton\")",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-t12-lifecycle-udp-1gbps-1500b-py-test-t10-t12-lifecycle-udp-1gbps-1500b-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

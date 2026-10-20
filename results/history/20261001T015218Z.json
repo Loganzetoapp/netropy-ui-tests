@@ -1,0 +1,579 @@
+{
+  "run_id": "20261001T015218Z",
+  "run_code": "RUN-81",
+  "timestamp": "2026-10-01T01:52:18Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "duration": 627.799,
+  "tests": [
+    {
+      "nodeid": "tests/t13_connectivity_diagnostics/test_t13_dhcp_pre_acq_not_supported.py::test_t13_dhcp_pre_acq_renders_not_supported[chromium]",
+      "outcome": "fail",
+      "duration": 15.644,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T13-DhcpPreAcq-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t13-connectivity-diagnostics-test-t13-dhcp-pre-acq-not-supported-py-test-t13-dhcp-pre-acq-renders-not-supported-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_valid_login_lands_on_dashboard[chromium]",
+      "outcome": "pass",
+      "duration": 1.138,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_invalid_password_shows_error_no_session[chromium]",
+      "outcome": "pass",
+      "duration": 2.641,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_logout_returns_to_login_and_kills_session[chromium]",
+      "outcome": "pass",
+      "duration": 1.407,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_auth_all.py::test_t1_two_concurrent_sessions_both_work[chromium]",
+      "outcome": "pass",
+      "duration": 2.257,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_concurrent_sessions.py::test_t1_two_concurrent_sessions_both_work[chromium]",
+      "outcome": "pass",
+      "duration": 2.252,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_invalid_password.py::test_t1_invalid_password_shows_error_no_session[chromium]",
+      "outcome": "pass",
+      "duration": 2.63,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_logout.py::test_t1_logout_returns_to_login_and_kills_session[chromium]",
+      "outcome": "pass",
+      "duration": 1.602,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t1_auth/test_t1_valid_login.py::test_t1_valid_login_lands_on_dashboard[chromium]",
+      "outcome": "pass",
+      "duration": 1.129,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 1.085,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_port_table_has_8_rows[chromium]",
+      "outcome": "pass",
+      "duration": 1.134,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_all.py::test_t2_licenses_section_shows_gating[chromium]",
+      "outcome": "pass",
+      "duration": 0.599,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_dashboard_loads.py::test_t2_dashboard_loads[chromium]",
+      "outcome": "pass",
+      "duration": 0.589,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_licenses_section_shows_gating.py::test_t2_licenses_section_shows_gating[chromium]",
+      "outcome": "pass",
+      "duration": 0.58,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t2_dashboard/test_t2_port_table_has_8_rows.py::test_t2_port_table_has_8_rows[chromium]",
+      "outcome": "pass",
+      "duration": 0.62,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_testbed.py::test_t4_create_testbed_adds_card_and_increments_counter[chromium]",
+      "outcome": "fail",
+      "duration": 10.812,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Create-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-create-testbed-py-test-t4-create-testbed-adds-card-and-increments-counter-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_empty_name_disables_create_draft[chromium]",
+      "outcome": "pass",
+      "duration": 0.737,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_create_validation.py::test_t4_create_duplicate_name_shows_inline_error[chromium]",
+      "outcome": "fail",
+      "duration": 10.771,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Validation-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-create-validation-py-test-t4-create-duplicate-name-shows-inline-error-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_delete_testbed.py::test_t4_delete_from_card_removes_tile[chromium]",
+      "outcome": "fail",
+      "duration": 10.945,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Delete-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-delete-testbed-py-test-t4-delete-from-card-removes-tile-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_delete_testbed.py::test_t4_delete_from_inside_edit_removes_tile[chromium]",
+      "outcome": "fail",
+      "duration": 11.518,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Delete-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-delete-testbed-py-test-t4-delete-from-inside-edit-removes-tile-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_duplicate_testbed.py::test_t4_duplicate_testbed_creates_card_with_distinct_uid[chromium]",
+      "outcome": "fail",
+      "duration": 11.416,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-Duplicate-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-duplicate-testbed-py-test-t4-duplicate-testbed-creates-card-with-distinct-uid-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_export_import_roundtrip.py::test_t4_export_then_import_recreates_equivalent_testbed[chromium]",
+      "outcome": "fail",
+      "duration": 10.808,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T4-ExportImport-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t4-testbeds-test-t4-export-import-roundtrip-py-test-t4-export-then-import-recreates-equivalent-testbed-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_import_malformed_file.py::test_t4_import_malformed_json_shows_error_no_broken_card[chromium]",
+      "outcome": "pass",
+      "duration": 0.679,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_unit_conversion.py::test_t5_line_rate_unit_dropdown_converts_value[chromium]",
+      "outcome": "fail",
+      "duration": 10.744,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-RateUnit-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-line-rate-unit-conversion-py-test-t5-line-rate-unit-dropdown-converts-value-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_zero_clears_on_blur[chromium]",
+      "outcome": "fail",
+      "duration": 11.341,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-LineRate-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-line-rate-validation-py-test-t5-line-rate-zero-clears-on-blur-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_negative_clears_on_blur[chromium]",
+      "outcome": "fail",
+      "duration": 10.762,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-LineRate-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-line-rate-validation-py-test-t5-line-rate-negative-clears-on-blur-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_no_client_side_upper_bound[chromium]",
+      "outcome": "fail",
+      "duration": 10.776,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-LineRate-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-line-rate-validation-py-test-t5-line-rate-no-client-side-upper-bound-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_rejects_non_numeric_keystrokes[chromium]",
+      "outcome": "fail",
+      "duration": 11.266,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-LineRate-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-line-rate-validation-py-test-t5-line-rate-rejects-non-numeric-keystrokes-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_network_profile_dropdown.py::test_t5_network_profile_dropdown_default_state[chromium]",
+      "outcome": "fail",
+      "duration": 10.803,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-NetworkProfile-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-network-profile-dropdown-py-test-t5-network-profile-dropdown-default-state-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_next_disabled_on_invalid_config.py::test_t5_next_disabled_when_bidirectional_peer_is_none[chromium]",
+      "outcome": "fail",
+      "duration": 11.279,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-NextInvalid-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-next-disabled-on-invalid-config-py-test-t5-next-disabled-when-bidirectional-peer-is-none-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_peer_port_excludes_self.py::test_t5_peer_port_options_exclude_self[chromium]",
+      "outcome": "fail",
+      "duration": 11.332,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-PeerPort-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-peer-port-excludes-self-py-test-t5-peer-port-options-exclude-self-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_roster_topology_view_toggle.py::test_t5_roster_and_topology_views_both_render[chromium]",
+      "outcome": "fail",
+      "duration": 10.77,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-RosterTopology-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-roster-topology-view-toggle-py-test-t5-roster-and-topology-views-both-render-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_toggle_off_on_retains_config.py::test_t5_toggle_off_then_on_retains_rate_and_direction[chromium]",
+      "outcome": "fail",
+      "duration": 10.816,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-ToggleRetain-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-toggle-off-on-retains-config-py-test-t5-toggle-off-then-on-retains-rate-and-direction-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_use_toggle_controls.py::test_t5_use_toggle_enables_and_disables_row_controls[chromium]",
+      "outcome": "fail",
+      "duration": 11.257,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T5-UseToggle-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t5-ports-test-t5-use-toggle-controls-py-test-t5-use-toggle-enables-and-disables-row-controls-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_cards_table_view_sync.py::test_t6_ip_edited_in_cards_view_appears_in_table_view[chromium]",
+      "outcome": "fail",
+      "duration": 11.308,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-CardsTable-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-cards-table-view-sync-py-test-t6-ip-edited-in-cards-view-appears-in-table-view-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_dst_autofill_button.py::test_t6_dst_ip_autofill_is_manual_not_live[chromium]",
+      "outcome": "fail",
+      "duration": 10.776,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-Autofill-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-dst-autofill-button-py-test-t6-dst-ip-autofill-is-manual-not-live-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_dst_autofill_button.py::test_t6_dst_mac_autofill_is_manual_not_live[chromium]",
+      "outcome": "fail",
+      "duration": 10.817,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-Autofill-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-dst-autofill-button-py-test-t6-dst-mac-autofill-is-manual-not-live-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_encap_dropdown.py::test_t6_encap_dropdown_options_render[chromium]",
+      "outcome": "fail",
+      "duration": 10.87,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-Encap-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-encap-dropdown-py-test-t6-encap-dropdown-options-render-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_gateway_destmac_toggle.py::test_t6_gateway_destmac_toggle_preserves_each_value[chromium]",
+      "outcome": "fail",
+      "duration": 10.965,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-GatewayToggle-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-gateway-destmac-toggle-py-test-t6-gateway-destmac-toggle-preserves-each-value-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_default_32_is_one_host[chromium]",
+      "outcome": "fail",
+      "duration": 10.759,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-HostCount-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-host-count-math-py-test-t6-host-count-default-32-is-one-host-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_31_is_two_hosts[chromium]",
+      "outcome": "fail",
+      "duration": 10.812,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-HostCount-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-host-count-math-py-test-t6-host-count-31-is-two-hosts-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_25_is_126_hosts[chromium]",
+      "outcome": "fail",
+      "duration": 10.773,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-HostCount-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-host-count-math-py-test-t6-host-count-25-is-126-hosts-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_malformed_source_ip_accepted_without_error[chromium]",
+      "outcome": "fail",
+      "duration": 10.778,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-InvalidInput-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-invalid-ip-mac-no-validation-py-test-t6-malformed-source-ip-accepted-without-error-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_out_of_range_octet_accepted_without_error[chromium]",
+      "outcome": "fail",
+      "duration": 10.799,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-InvalidInput-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-invalid-ip-mac-no-validation-py-test-t6-out-of-range-octet-accepted-without-error-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_bad_mac_format_accepted_without_error[chromium]",
+      "outcome": "fail",
+      "duration": 10.849,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-InvalidInput-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-invalid-ip-mac-no-validation-py-test-t6-bad-mac-format-accepted-without-error-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_ip_inc_range.py::test_t6_ip_inc_disabled_at_one_host_enabled_above[chromium]",
+      "outcome": "fail",
+      "duration": 10.802,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-IPInc-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-ip-inc-range-py-test-t6-ip-inc-disabled-at-one-host-enabled-above-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_ip_inc_range.py::test_t6_ip_inc_changes_range_end_not_host_count[chromium]",
+      "outcome": "fail",
+      "duration": 10.777,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T6-IPInc-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t6-network-config-test-t6-ip-inc-range-py-test-t6-ip-inc-changes-range-end-not-host-count-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_add_stream_names.py::test_t7_add_stream_names_auto_increment[chromium]",
+      "outcome": "fail",
+      "duration": 10.879,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-AddStream-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-add-stream-names-py-test-t7-add-stream-names-auto-increment-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_delete_streams_to_zero.py::test_t7_deleting_all_streams_disables_apply[chromium]",
+      "outcome": "fail",
+      "duration": 10.776,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-DeleteStreams-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-delete-streams-to-zero-py-test-t7-deleting-all-streams-disables-apply-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_distribute_across_ports.py::test_t7_distribute_across_ports_alternate_vs_sequence[chromium]",
+      "outcome": "fail",
+      "duration": 10.811,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-Distribute-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-distribute-across-ports-py-test-t7-distribute-across-ports-alternate-vs-sequence-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_duplicate_stream.py::test_t7_clone_stream_creates_distinct_named_copy[chromium]",
+      "outcome": "fail",
+      "duration": 11.281,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-DuplicateStream-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-duplicate-stream-py-test-t7-clone-stream-creates-distinct-named-copy-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_apply_to_all.py::test_t7_frame_size_apply_to_all_then_per_row_edit_sticks[chromium]",
+      "outcome": "fail",
+      "duration": 10.806,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-FrameSizeApply-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-frame-size-apply-to-all-py-test-t7-frame-size-apply-to-all-then-per-row-edit-sticks-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_bounds.py::test_t7_frame_size_below_64_accepted_without_clamping[chromium]",
+      "outcome": "fail",
+      "duration": 10.813,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-FrameSizeBounds-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-frame-size-bounds-py-test-t7-frame-size-below-64-accepted-without-clamping-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_bounds.py::test_t7_frame_size_above_9216_accepted_without_clamping[chromium]",
+      "outcome": "fail",
+      "duration": 10.836,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-FrameSizeBounds-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-frame-size-bounds-py-test-t7-frame-size-above-9216-accepted-without-clamping-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_frame_size_bounds.py::test_t7_frame_size_rejects_non_numeric_keystrokes[chromium]",
+      "outcome": "fail",
+      "duration": 10.855,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-FrameSizeBounds-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-frame-size-bounds-py-test-t7-frame-size-rejects-non-numeric-keystrokes-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_layer_chip_opens_editor.py::test_t7_ethernet_chip_opens_editor_on_ethernet_tab[chromium]",
+      "outcome": "fail",
+      "duration": 11.322,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-LayerChip-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-layer-chip-opens-editor-py-test-t7-ethernet-chip-opens-editor-on-ethernet-tab-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_stream_state_toggle.py::test_t7_stream_disabled_state_persists_across_navigation[chromium]",
+      "outcome": "fail",
+      "duration": 11.347,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T7-StreamState-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t7-streams-test-t7-stream-state-toggle-py-test-t7-stream-disabled-state-persists-across-navigation-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_edit_all_vs_inline_pencil.py::test_t8_inline_pencil_click_becomes_editable[chromium]",
+      "outcome": "fail",
+      "duration": 10.826,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-EditAll-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-edit-all-vs-inline-pencil-py-test-t8-inline-pencil-click-becomes-editable-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_edit_all_vs_inline_pencil.py::test_t8_edit_all_opens_stream_bandwidth_modal[chromium]",
+      "outcome": "fail",
+      "duration": 10.845,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-EditAll-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-edit-all-vs-inline-pencil-py-test-t8-edit-all-opens-stream-bandwidth-modal-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_per_port_selector.py::test_t8_per_port_selector_shows_that_ports_own_mix[chromium]",
+      "outcome": "fail",
+      "duration": 10.971,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-PerPortSelector-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-per-port-selector-py-test-t8-per-port-selector-shows-that-ports-own-mix-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_disabled_by_default[chromium]",
+      "outcome": "fail",
+      "duration": 10.812,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-RampMath-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-ramp-math-and-disabled-state-py-test-t8-ramp-disabled-by-default-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_math_updates_total_run_time[chromium]",
+      "outcome": "fail",
+      "duration": 10.794,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-RampMath-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-ramp-math-and-disabled-state-py-test-t8-ramp-math-updates-total-run-time-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_stream_mix_over_100_warns.py::test_t8_pinning_over_100_percent_warns_not_blocks[chromium]",
+      "outcome": "fail",
+      "duration": 11.294,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-MixOver100-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-stream-mix-over-100-warns-py-test-t8-pinning-over-100-percent-warns-not-blocks-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_stream_mix_rebalances.py::test_t8_stream_mix_splits_evenly_on_add[chromium]",
+      "outcome": "fail",
+      "duration": 10.779,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-MixRebalance-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-stream-mix-rebalances-py-test-t8-stream-mix-splits-evenly-on-add-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_stream_mix_rebalances.py::test_t8_editing_one_share_rebalances_the_other[chromium]",
+      "outcome": "fail",
+      "duration": 10.782,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-MixRebalance-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-stream-mix-rebalances-py-test-t8-editing-one-share-rebalances-the-other-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_tx_burst_bandwidth_cap.py::test_t8_tx_burst_clamps_to_declared_max[chromium]",
+      "outcome": "fail",
+      "duration": 10.843,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-TxBurst-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-tx-burst-bandwidth-cap-py-test-t8-tx-burst-clamps-to-declared-max-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_tx_burst_bandwidth_cap.py::test_t8_bandwidth_cap_not_yet_configurable[chromium]",
+      "outcome": "fail",
+      "duration": 11.284,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-TxBurst-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-tx-burst-bandwidth-cap-py-test-t8-bandwidth-cap-not-yet-configurable-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_unit_toggle_conversion.py::test_t8_unit_toggle_converts_share_value[chromium]",
+      "outcome": "fail",
+      "duration": 10.793,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T8-UnitToggle-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t8-traffic-load-test-t8-unit-toggle-conversion-py-test-t8-unit-toggle-converts-share-value-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t9_network_profiles/test_t9_export_import_roundtrip.py::test_t9_export_then_import_recreates_profile[chromium]",
+      "outcome": "fail",
+      "duration": 10.816,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T9-ExportImport-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t9-network-profiles-test-t9-export-import-roundtrip-py-test-t9-export-then-import-recreates-profile-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t9_network_profiles/test_t9_save_profile_from_wizard.py::test_t9_save_profile_from_wizard_appears_everywhere[chromium]",
+      "outcome": "fail",
+      "duration": 10.786,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T9-SaveProfile-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t9-network-profiles-test-t9-save-profile-from-wizard-py-test-t9-save-profile-from-wizard-appears-everywhere-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t9_network_profiles/test_t9_select_profile_populates_fields.py::test_t9_selecting_profile_populates_ports[chromium]",
+      "outcome": "fail",
+      "duration": 10.801,
+      "failure_message": "AssertionError: Locator expected to have count '1'\nActual value: 0 \nCall log:\n  - Expect \"to_have_count\" with timeout 10000ms\n  - waiting for locator(\".tb-tile\").filter(has_text=\"T9-ProfileSource-DeleteMe\")\n    24 \u00d7 locator resolved to 0 elements\n       - unexpected value \"0\"",
+      "screenshot": "artifacts/tests-t9-network-profiles-test-t9-select-profile-populates-fields-py-test-t9-selecting-profile-populates-ports-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

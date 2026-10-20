@@ -1,0 +1,20 @@
+{
+  "run_id": "20261002T025402Z",
+  "run_code": "RUN-124",
+  "timestamp": "2026-10-02T02:54:02Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 80.322,
+  "tests": [
+    {
+      "nodeid": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+      "outcome": "fail",
+      "duration": 80.277,
+      "failure_message": "AssertionError: Locator expected to be visible\nActual value: - img \"Apposite Technologies\"\n- text: \"Netropy Traffic Generator online Unit \\\"local\\\" \u2014 the traffic-generator unit this UI controls. Online: responding to health checks.\"\n- img\n- text: \"Oct 1, 2026 19:54:20 PDT Unit clock (America/Los_Angeles (PDT)) NTP server: not configured Oct 1, 2026 19:54:20 PDT\"\n- button \"Account\": TU test User\n- button \"Menu\":\n  - img\n- text: Model NTG10G4 10G SN 03000200-0400-0500-0006-000700080009\n- button \"C",
+      "screenshot": "artifacts/tests-t15-wan-emulator-test-t15-delay-only-py-test-t15-delay-only-adds-expected-latency-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

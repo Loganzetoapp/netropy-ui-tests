@@ -1,0 +1,20 @@
+{
+  "run_id": "20261002T025757Z",
+  "run_code": "RUN-126",
+  "timestamp": "2026-10-02T02:57:57Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 79.331,
+  "tests": [
+    {
+      "nodeid": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+      "outcome": "fail",
+      "duration": 79.299,
+      "failure_message": "AssertionError: No 'Avg latency' on the Stats page. Page:\n- img \"Apposite Technologies\"\n- text: \"Netropy Traffic Generator online Unit \\\"local\\\" \u2014 the traffic-generator unit this UI controls. Online: responding to health checks.\"\n- img\n- text: \"Oct 1, 2026 19:58:15 PDT Unit clock (America/Los_Angeles (PDT)) NTP server: not configured Oct 1, 2026 19:58:15 PDT\"\n- button \"Account\": TU test User\n- button \"Menu\":\n  - img\n- img\n- 'heading \"Statistics \u2014 T15-WAN-Delay \u00b7 UID: ed498d88 ed498d881f59475f857",
+      "screenshot": "artifacts/tests-t15-wan-emulator-test-t15-delay-only-py-test-t15-delay-only-adds-expected-latency-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "run_id": "20261001T072942Z",
+  "run_code": "RUN-115",
+  "timestamp": "2026-10-01T07:29:42Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 316.84,
+  "tests": [
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_t12_lifecycle_ntp_50mbps_90b.py::test_t10_t12_lifecycle_ntp_50mbps_90b[chromium]",
+      "outcome": "fail",
+      "duration": 220.535,
+      "failure_message": "AssertionError: Run #1 was never saved. Header: 'Statistics \u2014 T10-Life-NTP \u00b7 UID: 260fa6c2\\nTraffic Engine\\nACTIVE'; status text: ['LIVE \u00b7 IDLE', 'Ready to start traffic', 'Ports are armed and idle. Start traffic to begin collecting live statistics.']; toasts: []",
+      "screenshot": "artifacts/tests-t10-t12-lifecycle-test-t10-t12-lifecycle-ntp-50mbps-90b-py-test-t10-t12-lifecycle-ntp-50mbps-90b-chromium/test-failed-1.png",
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t10_t12_lifecycle/test_t10_t12_lifecycle_udp_1gbps_1500b.py::test_t10_t12_lifecycle_udp_1gbps_1500b[chromium]",
+      "outcome": "pass",
+      "duration": 96.27,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

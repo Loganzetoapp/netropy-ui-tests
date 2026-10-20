@@ -32,8 +32,11 @@ from webapp.known_issues import (
     match_failure,
     parse_confirmed_issues,
 )
-from webapp.persistence import HISTORY_DIR, get_run, list_batches, list_runs_for_nodeid, list_test_runs
+from webapp.persistence import (
+    HISTORY_DIR, get_run, list_batches, list_runs_for_nodeid, list_sessions, list_test_runs, session_tests,
+)
 from webapp.runner import AlreadyRunningError, IterationEvent, TestRunner
+from webapp.targets import list_targets, normalize_target_url
 from webapp.trace_summary import extract_trace_summary
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -64,6 +67,9 @@ class RunRequest(BaseModel):
     nodeid: str
     repeat_count: int = 1
     headed: bool = False
+    # Which box to run against. None = the .env NETROPY_URL (see
+    # webapp/targets.py).
+    target_url: Optional[str] = None
 
 
 @app.get("/api/modules")
@@ -92,11 +98,13 @@ def get_modules():
 @app.get("/api/catalog")
 def get_catalog():
     groups = discover_groups()
+    rows_by_nodeid = _rows_by_nodeid()
     return {
         "groups": [
             {
                 "id": g.id,
                 "label": g.label,
+                "description": g.description,
                 "run_all_nodeids": g.run_all_nodeids,
                 "files": [
                     {
@@ -109,6 +117,13 @@ def get_catalog():
                                 "name": t.name,
                                 "markers": t.markers,
                                 "safety_marker": t.safety_marker,
+                                "description": t.description,
+                                "full_description": t.full_description,
+                                "param_count": t.param_count,
+                                "uses_wan": t.uses_wan,
+                                "last_result": _last_result(
+                                    _rows_for_catalog_nodeid(t.nodeid, rows_by_nodeid)
+                                ),
                             }
                             for t in f.tests
                         ],
@@ -121,6 +136,30 @@ def get_catalog():
     }
 
 
+_OUTCOME_RANK = {"error": 3, "fail": 2, "pass": 1}
+
+
+def _last_result(rows: list[dict]) -> Optional[dict]:
+    """The last time a test ran: every case of it (each parametrize id)
+    in the newest pytest session that included it, folded into one
+    outcome. A failing or erroring case wins over passing ones; a session
+    of only skips reads "skip". None when the test has never run.
+    `rows` are newest-first (see _rows_for_catalog_nodeid)."""
+    if not rows:
+        return None
+    newest = rows[0]
+    session = [r for r in rows if r["run_id"] == newest["run_id"]]
+    worst = max(session, key=lambda r: _OUTCOME_RANK.get(r["outcome"], 0))
+    return {
+        "outcome": worst["outcome"],
+        "failure_kind": worst.get("failure_kind"),
+        "run_code": newest["run_code"],
+        "timestamp": newest["timestamp"],
+        "cases": len(session),
+        "passed": sum(1 for r in session if r["outcome"] == "pass"),
+    }
+
+
 def _marker_for(nodeid: str) -> str:
     for g in discover_groups():
         for f in g.files:
@@ -130,11 +169,24 @@ def _marker_for(nodeid: str) -> str:
     raise HTTPException(404, f"Unknown test: {nodeid}")
 
 
+@app.get("/api/targets")
+def get_targets():
+    return list_targets()
+
+
 @app.post("/api/runs")
 def start_run(req: RunRequest):
     marker = _marker_for(req.nodeid)
+    target_url = None
+    if req.target_url:
+        try:
+            target_url = normalize_target_url(req.target_url)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
     try:
-        batch_id = runner.start(req.nodeid, marker, req.repeat_count, req.headed)
+        batch_id = runner.start(
+            req.nodeid, marker, req.repeat_count, req.headed, target_url=target_url
+        )
     except AlreadyRunningError as exc:
         raise HTTPException(409, str(exc))
     return {"batch_id": batch_id}
@@ -162,6 +214,21 @@ def stream_run(batch_id: str):
             yield _sse_format(event)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@app.get("/api/history")
+def get_history():
+    """Every run (dashboard and command line), newest first: the Results
+    page's list. Each run's tests load on demand from /api/history/{run_id}."""
+    return {"sessions": list_sessions(HISTORY_DIR)}
+
+
+@app.get("/api/history/{run_id}")
+def get_history_session(run_id: str):
+    tests = session_tests(run_id, HISTORY_DIR)
+    if tests is None:
+        raise HTTPException(404, f"Unknown run: {run_id}")
+    return {"run_id": run_id, "tests": tests}
 
 
 @app.get("/api/results")
@@ -197,17 +264,21 @@ def get_results():
 
 
 FINDINGS_PATH = REPO_ROOT / "netropy-ui-findings.md"
+# The running write-up of the current investigation (status table, evidence,
+# suite changes) — shown above the full findings doc on the Findings tab.
+INVESTIGATION_LOG_PATH = REPO_ROOT / "docs" / "ntg5-investigation-log.md"
+
+
+def _render_markdown(path: Path) -> Optional[str]:
+    if not path.exists():
+        return None
+    return markdown.markdown(path.read_text(), extensions=["fenced_code", "tables"])
 
 
 @app.get("/api/findings")
 def get_findings():
-    if not FINDINGS_PATH.exists():
-        html = "<p>No findings recorded yet.</p>"
-    else:
-        html = markdown.markdown(
-            FINDINGS_PATH.read_text(), extensions=["fenced_code", "tables"]
-        )
-    return {"html": html}
+    html = _render_markdown(FINDINGS_PATH) or "<p>No findings recorded yet.</p>"
+    return {"html": html, "investigation_html": _render_markdown(INVESTIGATION_LOG_PATH)}
 
 
 # --- Run-detail and area-rollup endpoints -----------------------------------
@@ -286,6 +357,17 @@ def _known_issue_area_token(nodeid: str, area: Optional[dict]) -> Optional[str]:
     return sorted(tokens)[0]
 
 
+def _metrics_url(metrics_file):
+    """The /results URL of a run_metrics sidecar, or None. Only files under
+    results/metrics/ are exposed (history is local, but don't link out of it)."""
+    if not metrics_file:
+        return None
+    rel = Path(metrics_file)
+    if rel.is_absolute() or ".." in rel.parts or rel.parts[:2] != ("results", "metrics"):
+        return None
+    return "/" + rel.as_posix()
+
+
 @app.get("/api/runs/{run_code}")
 def get_run_detail(run_code: str):
     run = get_run(run_code, HISTORY_DIR)
@@ -323,7 +405,12 @@ def get_run_detail(run_code: str):
         rows = list_runs_for_nodeid(nodeid, HISTORY_DIR) if nodeid else []
         if nodeid and nodeid not in sibling_runs:
             sibling_runs[nodeid] = [
-                {"run_code": r["run_code"], "timestamp": r["timestamp"], "outcome": r["outcome"]}
+                {
+                    "run_code": r["run_code"],
+                    "timestamp": r["timestamp"],
+                    "outcome": r["outcome"],
+                    "failure_kind": r.get("failure_kind"),
+                }
                 for r in rows
                 if r["run_code"] != run_code
             ][:SIBLING_RUN_LIMIT]
@@ -334,6 +421,7 @@ def get_run_detail(run_code: str):
             {
                 "nodeid": nodeid,
                 "outcome": outcome,
+                "failure_kind": test.get("failure_kind"),
                 "duration": test.get("duration", 0.0),
                 "failure_message": failure_message,
                 "screenshot": test.get("screenshot"),
@@ -341,6 +429,11 @@ def get_run_detail(run_code: str):
                 "area": area,
                 "known_issue_matches": known_issue_matches,
                 "trace_summary": trace_summary,
+                # Measured numbers (run_metrics.py): checks and per-run
+                # digests inline; the per-second series stay in the sidecar
+                # file, which the page fetches from the /results mount.
+                "metrics": test.get("metrics"),
+                "metrics_file": _metrics_url(test.get("metrics_file")),
             }
         )
 
@@ -496,6 +589,7 @@ def get_area_detail(area_id: str):
                     "run_code": latest["run_code"],
                     "timestamp": latest["timestamp"],
                     "outcome": latest["outcome"],
+                    "failure_kind": latest.get("failure_kind"),
                 }
 
             tests_out.append(
@@ -539,6 +633,7 @@ def get_area_detail(area_id: str):
                                 "run_code": row["run_code"],
                                 "timestamp": row["timestamp"],
                                 "outcome": row["outcome"],
+                                "failure_kind": row.get("failure_kind"),
                             }
                         )
         issues_out.append(
@@ -671,6 +766,29 @@ def _validate_sharing_config(host: str, user: Optional[str], password: Optional[
         )
 
 
+def _ensure_port_free(host: str, port: int) -> None:
+    """Fail fast, with a readable message, when another process (usually a
+    dashboard left running in some other terminal) already holds the port.
+    Otherwise uvicorn prints "Application startup complete" and only then
+    an Errno 48 bind error, which reads like the dashboard itself is broken.
+    SO_REUSEADDR matches uvicorn's own bind, so a socket in TIME_WAIT from
+    a just-stopped dashboard doesn't count as taken."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind((host, port))
+        except OSError as exc:
+            raise SystemExit(
+                f"Port {port} is already in use ({exc.strerror}) — most likely the "
+                f"dashboard is already running in another terminal. Open "
+                f"http://127.0.0.1:{port}/ to use it, or stop it first "
+                f"(`lsof -nP -iTCP:{port} -sTCP:LISTEN` shows the PID). "
+                "To run a second copy, set WEBAPP_PORT in .env."
+            ) from None
+
+
 if __name__ == "__main__":
     import socket
 
@@ -685,6 +803,7 @@ if __name__ == "__main__":
     password = os.environ.get("WEBAPP_PASSWORD")
 
     _validate_sharing_config(host, user, password)
+    _ensure_port_free(host, port)
     if user and password:
         app.add_middleware(BasicAuthMiddleware, user=user, password=password)
         print(f"Netropy Test Dashboard (login required): http://{host}:{port}/", flush=True)

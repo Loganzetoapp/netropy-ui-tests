@@ -1,0 +1,20 @@
+{
+  "run_id": "20261002T030704Z",
+  "run_code": "RUN-129",
+  "timestamp": "2026-10-02T03:07:04Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 104.392,
+  "tests": [
+    {
+      "nodeid": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+      "outcome": "fail",
+      "duration": 104.337,
+      "failure_message": "AssertionError: Locator expected to have count '0'\nActual value: 1 \nCall log:\n  - Expect \"to_have_count\" with timeout 15000ms\n  - waiting for locator(\".list-group.paths\").get_by_text(\"t15-ntg-delay\", exact=True)\n    34 \u00d7 locator resolved to 1 element\n       - unexpected value \"1\"",
+      "screenshot": "artifacts/tests-t15-wan-emulator-test-t15-delay-only-py-test-t15-delay-only-adds-expected-latency-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

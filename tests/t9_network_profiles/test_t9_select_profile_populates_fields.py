@@ -8,6 +8,8 @@ fills in that port's Line Rate and Peer Port — not just a label change.
 import pytest
 from playwright.sync_api import Page, expect
 
+from conftest import wait_for_testbeds_loaded
+
 SOURCE_TESTBED = "T9-ProfileSource-DeleteMe"
 TARGET_TESTBED = "T9-ProfileTarget-DeleteMe"
 PROFILE_NAME = "T9-SelectProfile-Profile-DeleteMe"
@@ -62,6 +64,12 @@ def clean_up(dashboard: Page):
     _delete_testbed_if_present(dashboard, TARGET_TESTBED)
     _delete_profile_if_present(dashboard)
     yield
+    # The test ends inside the editor; get back to the dashboard (and let
+    # the testbed list load) or the deletes below find nothing and no-op,
+    # leaking the profile into every later test that lists profiles.
+    if dashboard.get_by_role("button", name="← Dashboard").is_visible():
+        _back_to_dashboard(dashboard)
+    wait_for_testbeds_loaded(dashboard)
     _delete_testbed_if_present(dashboard, SOURCE_TESTBED)
     _delete_testbed_if_present(dashboard, TARGET_TESTBED)
     _delete_profile_if_present(dashboard)

@@ -6,18 +6,33 @@
 <title>Netropy Test Dashboard</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/styles.css">
+<script>
+  // Applied synchronously, before first paint, so a stored dark-mode
+  // preference never flashes light first. Wrapped in try/catch since
+  // localStorage can throw (private browsing, blocked site data) — a
+  // failed read just falls back to the OS preference via CSS.
+  try {
+    var storedTheme = localStorage.getItem("theme");
+    if (storedTheme === "dark" || storedTheme === "light") {
+      document.documentElement.setAttribute("data-theme", storedTheme);
+    }
+  } catch (e) {}
+</script>
 </head>
 <body>
   <header class="topbar">
     <button type="button" id="logo-home" class="logo-home" aria-label="Go to Overview">
-      <img src="/static/apposite-logo.png" alt="Apposite Technologies" class="logo">
+      <img src="/static/apposite-logo.png" alt="Apposite Technologies" class="logo img-light">
+      <img src="/static/apposite-logo-dark.png" alt="Apposite Technologies" class="logo img-dark">
     </button>
     <h1>Netropy Test Dashboard</h1>
+    <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode"></button>
   </header>
 
   <nav class="tabs" id="module-tabs"></nav>
 
   <div class="page-nav">
+    <button type="button" id="nav-back" class="page-nav-btn nav-back" hidden>← Back</button>
     <button type="button" id="nav-overview" class="page-nav-btn">Overview</button>
     <button type="button" id="nav-tests" class="page-nav-btn active">Tests</button>
     <button type="button" id="nav-results" class="page-nav-btn">Results</button>
@@ -35,6 +50,15 @@
         <span id="run-modal-count-label">How many times?</span>
         <input type="number" id="run-modal-count" min="1" value="1">
       </label>
+      <label class="field">
+        <span>Target box</span>
+        <select id="run-modal-target"></select>
+      </label>
+      <label class="field" id="run-modal-target-custom-field" hidden>
+        <span>Custom IP or URL</span>
+        <input type="text" id="run-modal-target-custom" placeholder="e.g. 192.168.173.120 or http://10.0.0.5:8080" autocomplete="off" spellcheck="false">
+      </label>
+      <p id="run-modal-target-error" class="field-error" role="alert" hidden></p>
       <label class="field-checkbox">
         <input type="checkbox" id="run-modal-headed">
         Run headed (show the browser window)

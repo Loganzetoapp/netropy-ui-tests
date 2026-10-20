@@ -1,0 +1,85 @@
+{
+  "run_id": "20261016T220845Z",
+  "run_code": "RUN-173",
+  "timestamp": "2026-10-16T22:08:45Z",
+  "git_sha": "d6fcca4",
+  "git_branch": "shared-pages-library",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.10",
+  "duration": 51.508,
+  "tests": [
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_dashboard_create_and_remove_testbed[chromium]",
+      "outcome": "pass",
+      "duration": 3.552,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_create_testbed_rejects_names_over_15_chars[chromium]",
+      "outcome": "pass",
+      "duration": 1.078,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_ports_step_rate_direction[chromium]",
+      "outcome": "pass",
+      "duration": 8.738,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_full_spec_is_stored[chromium]",
+      "outcome": "pass",
+      "duration": 7.283,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_load_profile_toggle_and_ramp[chromium]",
+      "outcome": "pass",
+      "duration": 2.732,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_editor_gateway_next_hop[chromium]",
+      "outcome": "pass",
+      "duration": 8.866,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_speaker1_facade_builds_their_config[chromium]",
+      "outcome": "pass",
+      "duration": 7.685,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_library_contract.py::test_t0_port_holders_reads_ownership[chromium]",
+      "outcome": "pass",
+      "duration": 1.533,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_library.py::test_t0_wan_path_form_round_trip[chromium]",
+      "outcome": "pass",
+      "duration": 9.976,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

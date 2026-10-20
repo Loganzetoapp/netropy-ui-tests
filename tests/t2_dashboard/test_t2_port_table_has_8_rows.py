@@ -1,8 +1,5 @@
 """T2 dashboard smoke — Port Status table renders 8 rows.
 
-Standalone split of one test from test_t2_dashboard_all.py so it can run
-in isolation; see that file for the full combined T2 suite.
-
 If this passes, auth, fixtures, and connectivity all work.
 """
 import pytest

@@ -1,0 +1,116 @@
+{
+  "run_id": "20261001T020149Z",
+  "run_code": "RUN-89",
+  "timestamp": "2026-10-01T02:01:49Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "hardware_free",
+  "target": "http://192.168.173.89",
+  "duration": 33.331,
+  "tests": [
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_unit_conversion.py::test_t5_line_rate_unit_dropdown_converts_value[chromium]",
+      "outcome": "pass",
+      "duration": 6.862,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_zero_clears_on_blur[chromium]",
+      "outcome": "pass",
+      "duration": 2.348,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_negative_clears_on_blur[chromium]",
+      "outcome": "pass",
+      "duration": 2.153,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_no_client_side_upper_bound[chromium]",
+      "outcome": "pass",
+      "duration": 2.018,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_line_rate_validation.py::test_t5_line_rate_rejects_non_numeric_keystrokes[chromium]",
+      "outcome": "pass",
+      "duration": 2.022,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_network_profile_dropdown.py::test_t5_network_profile_dropdown_default_state[chromium]",
+      "outcome": "pass",
+      "duration": 1.929,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_next_disabled_on_invalid_config.py::test_t5_next_disabled_when_bidirectional_peer_is_none[chromium]",
+      "outcome": "pass",
+      "duration": 2.482,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_peer_port_excludes_self.py::test_t5_peer_port_options_exclude_self[chromium]",
+      "outcome": "pass",
+      "duration": 2.766,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_roster_topology_view_toggle.py::test_t5_roster_and_topology_views_both_render[chromium]",
+      "outcome": "pass",
+      "duration": 2.001,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_toggle_off_on_retains_config.py::test_t5_toggle_off_then_on_retains_rate_and_direction[chromium]",
+      "outcome": "pass",
+      "duration": 2.107,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t5_ports/test_t5_use_toggle_controls.py::test_t5_use_toggle_enables_and_disables_row_controls[chromium]",
+      "outcome": "pass",
+      "duration": 2.225,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t13_connectivity_diagnostics/test_t13_dhcp_pre_acq_not_supported.py::test_t13_dhcp_pre_acq_renders_not_supported[chromium]",
+      "outcome": "pass",
+      "duration": 2.333,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t4_testbeds/test_t4_export_import_roundtrip.py::test_t4_export_then_import_recreates_equivalent_testbed[chromium]",
+      "outcome": "pass",
+      "duration": 2.059,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

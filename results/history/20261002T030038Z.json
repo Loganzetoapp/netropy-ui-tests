@@ -1,0 +1,20 @@
+{
+  "run_id": "20261002T030038Z",
+  "run_code": "RUN-127",
+  "timestamp": "2026-10-02T03:00:38Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "stateful",
+  "target": "http://192.168.173.89",
+  "duration": 146.754,
+  "tests": [
+    {
+      "nodeid": "tests/t15_wan_emulator/test_t15_delay_only.py::test_t15_delay_only_adds_expected_latency[chromium]",
+      "outcome": "fail",
+      "duration": 146.619,
+      "failure_message": "playwright._impl._errors.TimeoutError: Locator.click: Timeout 30000ms exceeded.\nCall log:\n  - waiting for locator(\".toolbar-control-wrapper .btn-outline-danger\")",
+      "screenshot": "artifacts/tests-t15-wan-emulator-test-t15-delay-only-py-test-t15-delay-only-adds-expected-latency-chromium/test-failed-1.png",
+      "trace": null
+    }
+  ]
+}

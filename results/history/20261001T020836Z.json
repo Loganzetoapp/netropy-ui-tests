@@ -1,0 +1,140 @@
+{
+  "run_id": "20261001T020836Z",
+  "run_code": "RUN-92",
+  "timestamp": "2026-10-01T02:08:36Z",
+  "git_sha": "529a8df",
+  "git_branch": "main",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.89",
+  "duration": 39.306,
+  "tests": [
+    {
+      "nodeid": "tests/t6_network_config/test_t6_cards_table_view_sync.py::test_t6_ip_edited_in_cards_view_appears_in_table_view[chromium]",
+      "outcome": "pass",
+      "duration": 6.956,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_dst_autofill_button.py::test_t6_dst_ip_autofill_is_manual_not_live[chromium]",
+      "outcome": "pass",
+      "duration": 1.942,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_dst_autofill_button.py::test_t6_dst_mac_autofill_is_manual_not_live[chromium]",
+      "outcome": "pass",
+      "duration": 1.83,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_encap_dropdown.py::test_t6_encap_dropdown_options_render[chromium]",
+      "outcome": "pass",
+      "duration": 2.698,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_gateway_destmac_toggle.py::test_t6_gateway_destmac_toggle_preserves_each_value[chromium]",
+      "outcome": "pass",
+      "duration": 1.913,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_default_32_is_one_host[chromium]",
+      "outcome": "pass",
+      "duration": 2.413,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_31_is_two_hosts[chromium]",
+      "outcome": "pass",
+      "duration": 2.288,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_host_count_math.py::test_t6_host_count_25_is_126_hosts[chromium]",
+      "outcome": "pass",
+      "duration": 2.53,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_malformed_source_ip_accepted_without_error[chromium]",
+      "outcome": "pass",
+      "duration": 2.449,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_out_of_range_octet_accepted_without_error[chromium]",
+      "outcome": "pass",
+      "duration": 1.854,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_invalid_ip_mac_no_validation.py::test_t6_bad_mac_format_accepted_without_error[chromium]",
+      "outcome": "pass",
+      "duration": 1.854,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_ip_inc_range.py::test_t6_ip_inc_disabled_at_one_host_enabled_above[chromium]",
+      "outcome": "pass",
+      "duration": 1.893,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t6_network_config/test_t6_ip_inc_range.py::test_t6_ip_inc_changes_range_end_not_host_count[chromium]",
+      "outcome": "pass",
+      "duration": 2.348,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t7_streams/test_t7_delete_streams_to_zero.py::test_t7_deleting_all_streams_disables_apply[chromium]",
+      "outcome": "pass",
+      "duration": 2.272,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_disabled_by_default[chromium]",
+      "outcome": "pass",
+      "duration": 2.058,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t8_traffic_load/test_t8_ramp_math_and_disabled_state.py::test_t8_ramp_math_updates_total_run_time[chromium]",
+      "outcome": "pass",
+      "duration": 1.974,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}

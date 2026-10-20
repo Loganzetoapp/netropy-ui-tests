@@ -58,6 +58,7 @@ class _Batch:
     marker: str
     repeat_count: int
     headed: bool = False
+    target_url: Optional[str] = None
     events: "queue.Queue" = field(default_factory=queue.Queue)
     done: bool = False
 
@@ -219,7 +220,12 @@ class TestRunner:
         self._review_client = client
 
     def start(
-        self, nodeid: str, marker: str, repeat_count: int, headed: bool = False
+        self,
+        nodeid: str,
+        marker: str,
+        repeat_count: int,
+        headed: bool = False,
+        target_url: Optional[str] = None,
     ) -> str:
         with self._lock:
             if self._active is not None and not self._active.done:
@@ -232,6 +238,7 @@ class TestRunner:
                 marker=marker,
                 repeat_count=repeat_count,
                 headed=headed,
+                target_url=target_url,
             )
             self._active = batch
             self._batches[batch.id] = batch
@@ -254,6 +261,10 @@ class TestRunner:
         for i in range(1, batch.repeat_count + 1):
             batch.events.put(IterationEvent(batch.id, i, batch.repeat_count, "running"))
             env = {**os.environ, "NETROPY_WEBAPP_BATCH_ID": batch.id}
+            if batch.target_url:
+                # conftest.py's load_dotenv() doesn't override variables
+                # already in the environment, so this wins over .env.
+                env["NETROPY_URL"] = batch.target_url
             before = _snapshot_history_files(self._history_dir)
             test_result: Optional[dict] = None
             run_code: Optional[str] = None
