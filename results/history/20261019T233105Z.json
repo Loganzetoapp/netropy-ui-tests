@@ -1,0 +1,117 @@
+{
+  "run_id": "20261019T233105Z",
+  "run_code": "RUN-194",
+  "timestamp": "2026-10-19T23:31:05Z",
+  "git_sha": "1e72661",
+  "git_branch": "shared-pages-library",
+  "markers": "not quarantine",
+  "target": "http://192.168.173.212",
+  "target_version": "5.0.12",
+  "duration": 0.038,
+  "tests": [
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_path_spec.py::test_t0_new_impairments_type_their_fields_method_first",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_path_spec.py::test_t0_impairment_refuses_what_the_emulator_refuses",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_path_spec.py::test_t0_frame_changing_impairments_are_known",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_path_spec.py::test_t0_stored_path_reads_back_as_the_same_spec",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_path_spec.py::test_t0_stored_path_with_unmodelled_settings_says_which",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_path_spec.py::test_t0_loss_tolerance_widens_only_for_small_runs",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_preflight.py::test_t0_preflight_idle_engine_goes_ahead",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_preflight.py::test_t0_preflight_cleans_up_our_own_leftovers",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_preflight.py::test_t0_preflight_never_touches_a_setup_with_traffic",
+      "outcome": "pass",
+      "duration": 0.002,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_preflight.py::test_t0_preflight_skips_an_idle_setup_unless_borrowing_is_on",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_preflight.py::test_t0_preflight_borrows_and_the_lease_puts_it_back",
+      "outcome": "pass",
+      "duration": 0.001,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_preflight.py::test_t0_lease_leaves_a_changed_engine_alone",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    },
+    {
+      "nodeid": "tests/t0_library/test_t0_wan_preflight.py::test_t0_preflight_deletes_our_endpoints_before_their_paths",
+      "outcome": "pass",
+      "duration": 0.0,
+      "failure_message": null,
+      "screenshot": null,
+      "trace": null
+    }
+  ]
+}
