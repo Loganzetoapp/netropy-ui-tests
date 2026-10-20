@@ -52,8 +52,29 @@ def test_t15_my_case(wan_bench):
     wan_bench.assert_ok()
 ```
 
-`Impairment` fields, per direction: `delay_ms` (constant delay), `loss_pct` (random loss) and
-`bandwidth_mbps` (a cap on the direction's access link, where its queue sits). Each has a check:
+`Impairment` fields, per direction:
+
+| Field(s) | Emulator setting |
+|---|---|
+| `delay_ms` | constant delay |
+| `delay_ms` + `jitter_ms` | normal delay: mean, σ (mean ≥ 3σ) |
+| `delay_ms` + `delay_max_ms` | uniform delay between the two |
+| `allow_reordering` | variable delay may reorder frames (off: delays are skewed to keep order) |
+| `loss_pct` | random loss |
+| `bandwidth_mbps` | a cap on the direction's access link, where its queue sits |
+| `duplicate_pct` | duplication |
+| `reorder_pct`, `reorder_offset` | reordering: % of frames, held back by N frames |
+| `outage_s`, `outage_every_s` | periodic outage |
+
+Ways to run, besides `baseline` / `impaired`:
+
+| Call | What it does |
+|---|---|
+| `impaired_with_change(testbed, spec, path, change_to, after_s)` | edits the path (Apply Changes) `after_s` into the run; the edit's timing goes in `run.marks` |
+| `routed(testbed, spec, {stream index: path})` | endpoints send each stream (UDP / TCP, matched by protocol, a full port range and the NTG port's IP) through its own path; everything else bypasses |
+| `read_preset(group, item, name)` | a built-in preset ("Cellular", "4G LTE") read back as a `WanPathSpec`; fails, naming the setting, if it uses something `Impairment` can't describe |
+
+Each kind of impairment has a check:
 
 | Check | What must hold |
 |---|---|
@@ -61,17 +82,24 @@ def test_t15_my_case(wan_bench):
 | `check_loss(run, baseline, path)` | NTG loss % = the setting; NTG lost frames = emulator WAN drops; no added latency |
 | `check_bandwidth(run, baseline, path)` | cap below the offer: received rate = cap, NTG lost frames = emulator queue drops. Cap above it: nothing lost, full rate, no added latency |
 | `check_verdict(run, testbed, max_loss_pct)` | sets the saved run's Max loss criterion in the UI; the verdict follows the measured loss on screen and in the Controller |
+| `check_jitter(run, baseline, path)` | latency rises by the mean, none above mean + 6σ or below bypass, jitter rises (its size vs 2σ/√π recorded) |
+| `check_sequence(run, path)` | duplicates/reorders: NTG loss never negative, received ≤ sent + duplicates; how the NTG counts them recorded |
+| `check_outage(run, path)` | run saved; the per-second receive rate goes dark; NTG lost frames = emulator drops |
+| `check_change(run, baseline, before, after)` | per-second latency at the old delay before the edit and the new one after; run saved |
+| `check_drain(run, baseline, path)` | run saved; latency rises by the delay; `tail-not-settled` set exactly when frames were in flight |
+| `check_preset(run, baseline, path)` | below the preset's caps: its mean delay and loss, frame for frame with the emulator, full rate |
+| `check_per_stream(run, baseline, routes)` | each stream's latency and loss show only its own path; the emulator carried it on that path |
 
 Before a test's first run, `wan_preflight.py` checks and sets up the bench: NTG healthy, Ports 3/4
 free (or ours), their links up (it waits out a flap) at a speed that covers the spec, Engine 2 idle
-(our own leftovers are cleaned up), and no leftover paths of ours. Someone else's Engine 2 setup is
+(our own leftovers are cleaned up), and no leftover endpoints or paths of ours. Someone else's Engine 2 setup is
 never overwritten while traffic flows through it; when it's idle, tests skip unless `.env` has
 `WAN_BORROW_IDLE_ENGINE=true`, in which case it's borrowed and put back at session end. Results go on
 the summary sheet as `preflight`.
 
 Every bench run also checks that the UI's Avg Latency card matches the saved run and that both
-boxes count the same frames: emulator delivered = NTG received, delivered + dropped = NTG sent. A path that loses frames by design isn't
-required to have a "pass" verdict (the NTG's default is loss-based); `check_verdict` tests the
+boxes count the same frames: emulator delivered = NTG received, delivered + dropped − duplicated = NTG sent. A path that loses,
+duplicates or reorders frames by design isn't required to have a "pass" verdict (the NTG's default is loss-based); `check_verdict` tests the
 verdict itself. A new kind of impairment goes into `Impairment.fields()`, with a `check_*`
 method on `WanBench`.
 
@@ -86,9 +114,9 @@ method on `WanBench`.
 | `unit_health.py` | crash detection: UI top bar + Controller health and datapath state |
 | `traffic_engine.py` | `TestbedSpec` → checked, recorded run |
 | `testbed_spec.py` | the config block: `TestbedSpec` / `PortSpec` / `StreamSpec` |
-| `wan_emulator_page.py` | WAN emulator UI: engine state (Emulation, Default Actions), create/delete a path, `applied(spec)` / `path_created(spec)` context managers that always restore the engine (see `docs/wan-emulator-reference.md`) |
-| `wan_path_spec.py` | `WanPathSpec` / `Impairment`: a path's config block, per direction; also checks the box's stored path against it |
-| `wan_bench.py` | `WanBench` (the `wan_bench` fixture): NTG Port 3 → Engine 2 → Port 4. Baseline vs impaired runs, both boxes' counters on the summary sheet, delay / loss / bandwidth / verdict checks |
+| `wan_emulator_page.py` | WAN emulator UI: engine state (Emulation, Default Actions), create / edit / delete a path, create one from a preset, endpoints, and `applied(spec)` / `path_created(spec)` / `routed(paths, endpoints)` context managers that always restore the engine (see `docs/wan-emulator-reference.md`) |
+| `wan_path_spec.py` | `WanPathSpec` / `Impairment`: a path's config block, per direction; checks the box's stored path against it and reads a stored path (a preset) back into a spec. `EndpointSpec` for per-stream routing |
+| `wan_bench.py` | `WanBench` (the `wan_bench` fixture): NTG Port 3 → Engine 2 → Port 4. Baseline vs impaired runs (also: edited mid-run, routed per stream, from a preset), both boxes' counters on the summary sheet, a check per impairment |
 | `wan_preflight.py` | pre-run checks and set-up for the bench; `EngineLease` borrows an idle Engine 2 (opt-in) and puts it back |
 | `create_TE_testbed_page.py` | Speaker 1's `CreateTestbedPage` API on top of the above |
 | `settings.py`, `errors.py` | `.env` targets; `SystemBadStateError`, `PortsBusyError` |

@@ -40,6 +40,52 @@ to confirm, because each would act on someone else's testbed or on shared hardwa
 4. **WAN emulator .213 Engine Log: "redundant power supply failure"**
    (Oct 06 00:32:49). This is a hardware warning for whoever owns the box.
 
+## Observed 2026-10-19 (NTG 5.0.12, WAN emulator .213)
+
+Found while building the T18–T21 WAN library (endpoints, presets, edits).
+
+1. **NTG .212 is now build 5.0.12**, updated from 5.0.10 without notice
+   (the second silent update in a week). NTG Port 4 now links at 10 Gbps;
+   it was 1 Gbps through October.
+2. **WAN emulator: Create Endpoint with no IP address silently does
+   nothing.** With a label, port, protocol and action set but the IP
+   Address box empty, the button sends a request, the form stays open, no
+   endpoint is stored, and no error shows. With an address it saves. The
+   form should say an address is required, or accept "any".
+3. **WAN emulator: the path presets button and its menu have no accessible
+   names or roles** (a folder icon; groups open on hover only, so keyboard
+   users can't reach the items).
+4. **NTG counts delivered frames as lost after a long delay, and says the
+   tail settled (T19c, reproduced 2/2).** 2 s delay each way through the
+   emulator, 100 Mbps, 1/8/1 s run: the emulator delivered every frame
+   (73,818 of 73,818 each way, 0 dropped), but the NTG saved 70,016 and
+   69,888 received (5.2 % and 5.3 % "loss", about 3,800 frames each way,
+   roughly the last half second of traffic). The same saved run says
+   `tail-not-settled: false` with a 3.3 s tail, longer than the delay. So
+   either the NTG stops counting before its own tail window ends, or it
+   drops late-arriving frames from the count without flagging the tail.
+   The average latency it measured was right (2,000 ms). Bypass baseline
+   of the same spec: 0 % loss. Overlaps the earlier lost-run finding.
+5. **NTG jitter is inter-frame, so an order-keeping network hides it
+   (T18a, a fact to confirm, not a bug).** Normal delay mean 20 ms,
+   σ 5 ms, with the emulator keeping frames in order: latency spread
+   5.4–34.9 ms, but the NTG's avg jitter is 0.051 ms. Independent delays
+   would give about 5.6 ms (2σ/√π). Worth asking which jitter definition
+   the NTG documents.
+7. **5.0.12 removed the DHCP Pre-Acq diagnostics card and added a NAT card.**
+   The editor's Connectivity diagnostics (still "WORK IN PROGRESS") now has
+   ARP, Ping, Traceroute and NAT ("Rewrite the outer-IPv4 destination on
+   egress"). `test_t13_dhcp_pre_acq_renders_not_supported` checked that card, so
+   it was deleted (with the now-empty T13 area) on 2026-10-19. Also seen
+   the same day: the unit had **no testbeds at all** (other users' included),
+   most likely cleared by the upgrade.
+6. **The NTG transmits in 32-frame bursts at line rate (fact, measured).**
+   Below a WAN cap, average latency rises by the delay plus 16.5
+   frame-times at the cap, exactly a 32-frame burst's mean queueing: 4G
+   LTE 13.2 ms (15 Mbps) / 15.9 ms (12.5 Mbps), GEO 16.5 ms (12 Mbps) /
+   65.7 ms (3 Mbps). Matches the TX burst field's maximum (32; "blank =
+   datapath default"). Users measuring a slow link will see this.
+
 ## Observed 2026-10-16 on NTG 5.0.10 (not yet reproduced as tests)
 
 Seen while building T16b, read-only (the criteria popover was opened on an

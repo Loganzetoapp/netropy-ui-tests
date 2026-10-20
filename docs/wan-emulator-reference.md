@@ -59,9 +59,27 @@ Per direction, `wan/source-to-destination/…` and `wan/destination-to-source/�
 | `duplication` | `off`, `on` | `probability` %. Duplicates get their own delay/loss/reorder |
 | `mangle` | `off`, `ip` | `ip/selector` (`precedence`/`dscp`/`ecn`/`ds`/`custom`) + value. Checksums are recomputed, and max rate drops |
 
+Revealed value fields sit under their block: `wan/<dir>/delay/normal/mean`, `…/delay/uniform/minimum`,
+`…/outage/duration`, `…/reordering/probability`, `…/duplication/probability`, and so on.
+`…/delay/reordering` ("Allow Reordering") is a checkbox, stored as a boolean. Every field T15–T21 use
+round-trips through the real form (`tests/t0_library/test_t0_wan_library.py`, 2026-10-19).
+
 Other controls on the form:
-- A **presets** icon button next to the name, with groups *Cellular, Wi-Fi, Satellite, AWS, Cable,
-  SD-WAN*.
+- A **presets** button (folder icon, no accessible name) right of the name box. Its menu groups open
+  on **hover**; clicking a group closes the menu. Items (2026-10-19):
+
+  | Group | Items |
+  |---|---|
+  | Cellular | 3G, 4G LTE, 5G, 5G Bad |
+  | Wi-Fi | Good, Bad, 802.11a, 802.11b, 802.11g, 802.11n, 802.11ac |
+  | Satellite | Good, Bad, LEO, MEO, GEO |
+  | AWS | ap-northeast to us-west, ap-northeast to eu-west |
+  | Cable | VDSL, T1, T3 |
+  | SD-WAN | Good, Bad |
+
+  Read back: **4G LTE** = 25 ms constant each way, caps 15 Mbps (a→b) / 12.5 Mbps (b→a), 0.01 %
+  reordering. **GEO** = uniform 300–400 ms with Allow Reordering, caps 12 / 3 Mbps. **802.11n** =
+  15 ms constant, 500 Mbps each way. All three keep the auto queue and 18-byte frame overhead.
 - **Mirror** ↓/↑ copies one direction's settings to the other.
 - **Playback** (`/path/create/playback`) drives bandwidth, latency or loss from a Recording file over
   time.
@@ -70,8 +88,15 @@ Other controls on the form:
 
 ## Endpoint form (`/endpoint/create`)
 `label`, `port` (1/2 on Engine 1, 3/4 on Engine 2), `vlans`, `ipaddrs`, `protocol` (`tcp`/`udp`),
-`transports` (ports), `action` (`bypass`/`drop`/\<path\>). The suite doesn't need endpoints: it
-uses Default Action.
+`transports` (ports), `action` (`bypass`/`drop`/\<path\>; option values are path UUIDs, so select
+by label). Submit is **Create Endpoint**; delete is behind the row's gear, like a path.
+**An endpoint needs an address:** with only port and protocol, Create Endpoint silently saves
+nothing: no error, the form just stays (2026-10-19, report). Stored as
+`{"port": 3, "ipaddrs": "10.0.0.1", "protocol": "udp", "action": <path id>, ...}` under the engine's
+`endpoint` list. **The protocol only classifies with a transport port range set**: with Transports empty, a UDP
+endpoint also caught the TCP stream (2026-10-19), so T21 sets `1-65535`. T21 uses one endpoint per
+(NTG port, stream protocol) with that port's IP; Default
+Actions stay Bypass for everything else.
 
 ## Statistics
 - **Topology**: click a path (or the `Bypass` entry) for a single-path graph (rate, frames, bytes;
@@ -104,6 +129,10 @@ uses Default Action.
 - Teardown order: Emulation off → Default Actions back to Bypass → delete the path.
 - The GUI/API session is a 15-minute rolling cookie (`X-Apposite-Netropy`).
 - `get-stats-records` with an unknown metric returns a bare 500.
+
+## Seen 2026-10-19 (report)
+- Create Endpoint without an IP address does nothing and says nothing (see the endpoint form).
+- The preset button and the hover menu have no accessible names or roles.
 
 ## Seen 2026-10-11 (report)
 - **Engine Log: "redundant power supply failure" (Oct 06 00:32:49)** on .213. That's hardware; tell

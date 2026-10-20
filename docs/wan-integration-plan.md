@@ -109,17 +109,17 @@ link is 1G).
 | T15a ✅ | Delay only | 50 ms constant, both directions | avg latency +50 ± 5 ms; loss 0 | Done |
 | T15b ✅ | **Delay sweep** | 1, 10, 100, 500 ms | Rise matches each setting; min ≈ max for constant delay | Linearity / unit errors (µs vs ms) |
 | T15c ✅ | **Asymmetric delay** | 10 ms 3→4, 80 ms 4→3 | Per-direction latency matches each side | Per-direction reporting |
-| T16a ◐ | **Random loss** | 1 % and 5 % | NTG `loss-pct` ≈ setting; **NTG loss-frames == emulator wan-drops** (± in-flight) | Loss accuracy + cross-box accounting |
-| T16b ◐ | **Loss vs NTG criteria** | 2 % loss, criterion max-loss 1 % | NTG verdict = FAIL; with criterion 5 % → PASS | The NTG's pass/fail logic |
-| T17a ◐ | **Bandwidth cap** | 100 Mbps cap, offer 500 Mbps | NTG rx-rate ≈ 100 Mbps; loss ≈ 80 %; emulator queue drops ≈ NTG loss | Throughput accuracy, overload behaviour |
-| T17b ◐ | **Cap with headroom** | 600 Mbps cap, offer 500 Mbps | Zero loss; latency rises only by queueing | Shaper doesn't add false loss |
-| T18a | **Jitter** | Normal delay mean 20 ms, σ 5 ms | NTG avg jitter in the expected range; min/max latency within bounds | Jitter accuracy |
-| T18b | **Duplication / reordering** | 1 % each | Run completes; NTG doesn't report negative loss or > 100 % rx; note how it counts them | Likely bug area: unusual accounting |
-| T19a | **Outage mid-run** | Periodic outage (e.g. 2 s every 10 s) | NTG per-second `sample[]` shows gaps at the right times; the run is saved, not lost | Robustness + the crash/bad-state check |
-| T19b | **Change mid-run** | Start at 10 ms, switch to 100 ms halfway | Per-second latency steps at the switch time | Time-series correctness |
-| T19c | **Long delay vs drain** | 2 s delay, short run | Run is saved; `tail-not-settled` reported honestly; no lost run | Edge of the drain window; overlaps finding #1 |
-| T20 | **Presets** (golden set) | LTE, GEO satellite, 802.11n | Each within tolerance on rate / latency / loss | Release-to-release regression |
-| T21 | **Per-stream paths** (method C) | UDP stream → loss path, TCP stream → delay path | Each stream shows only its own impairment | Per-stream attribution |
+| T16a ✅ | **Random loss** | 1 % and 5 % | NTG `loss-pct` ≈ setting; **NTG loss-frames == emulator wan-drops** (± in-flight) | Loss accuracy + cross-box accounting |
+| T16b ✅ | **Loss vs NTG criteria** | 2 % loss, criterion max-loss 1 % | NTG verdict = FAIL; with criterion 5 % → PASS | The NTG's pass/fail logic |
+| T17a ✅ | **Bandwidth cap** | 100 Mbps cap, offer 500 Mbps | NTG rx-rate ≈ 100 Mbps; loss ≈ 80 %; emulator queue drops ≈ NTG loss | Throughput accuracy, overload behaviour |
+| T17b ✅ | **Cap with headroom** | 600 Mbps cap, offer 500 Mbps | Zero loss; latency rises only by queueing | Shaper doesn't add false loss |
+| T18a ✅ | **Jitter** | Normal delay mean 20 ms, σ 5 ms | NTG avg jitter in the expected range; min/max latency within bounds | Jitter accuracy |
+| T18b ✅ | **Duplication / reordering** | 1 % each | Run completes; NTG doesn't report negative loss or > 100 % rx; note how it counts them | Likely bug area: unusual accounting |
+| T19a ✅ | **Outage mid-run** | Periodic outage (e.g. 2 s every 10 s) | NTG per-second `sample[]` shows gaps at the right times; the run is saved, not lost | Robustness + the crash/bad-state check |
+| T19b ✅ | **Change mid-run** | Start at 10 ms, switch to 100 ms halfway | Per-second latency steps at the switch time | Time-series correctness |
+| T19c ❌ | **Long delay vs drain** | 2 s delay, short run | Run is saved; `tail-not-settled` reported honestly; no lost run | Edge of the drain window; overlaps finding #1 |
+| T20 ✅ | **Presets** (golden set) | LTE, GEO satellite, 802.11n | Each within tolerance on rate / latency / loss | Release-to-release regression |
+| T21 ✅ | **Per-stream paths** (method C) | UDP stream → loss path, TCP stream → delay path | Each stream shows only its own impairment | Per-stream attribution |
 
 **T16/T17 as built (2026-10-16).** Folders `tests/t16_wan_loss`, `tests/t17_wan_bandwidth`; same
 testbed and spec as T15, so one baseline serves T15–T17 in a session. Library additions:
@@ -148,6 +148,54 @@ held; the two boxes agree frame for frame:
 - The emulator's per-direction `frames` counts frames **delivered**, and `drops` all drops (WAN and
   queue), so the bench checks delivered = NTG received and delivered + dropped = NTG sent.
 - Port 4 dropped to 0 Mbps (then Port 3 to "unknown") right after T16b; the pre-run check caught it.
+
+**T18–T21 as built (2026-10-19).** Folders `tests/t18_wan_jitter`, `tests/t19_wan_robustness`,
+`tests/t20_wan_presets`, `tests/t21_wan_per_stream`; each test is a few lines on `wan_bench`.
+Library additions:
+- `Impairment`: normal delay (`jitter_ms`), uniform delay (`delay_max_ms`), `allow_reordering`,
+  `duplicate_pct`, `reorder_pct` / `reorder_offset`, `outage_s` / `outage_every_s`. Every field
+  round-trips through the real form (t0). `WanPathSpec.from_saved` reads a stored path back
+  into a spec; an enabled inbound access link folds into the direction's cap.
+- `WanBench.impaired_with_change` (T19b: Apply Changes mid-run, timing in `run.marks`),
+  `routed` (T21: endpoints per stream, matched by protocol and the NTG port's IP), `read_preset`
+  (T20), and a check per test: `check_jitter`, `check_sequence`, `check_outage`, `check_change`,
+  `check_drain`, `check_preset`, `check_per_stream`. Frame accounting allows for duplicates.
+- `WanEmulatorPage.edit_path`, `create_path_from_preset` (hover menu), endpoints, `routed()`.
+- Spec variants in `tests/t15_wan_emulator/specs.py`: `LONG_SPEC` (40 s hold: T19a/b),
+  `SLOW_SPEC` (100 Mbps, 10 s: T19c), `TWO_STREAM_SPEC` (UDP + TCP: T21); T20 runs each preset
+  at half its tightest cap.
+
+Decisions made while building:
+- **T18a keeps frames in order** (Allow Reordering off), so neighbouring delays are correlated and
+  the NTG's jitter will be well under the independent-delay 2σ/√π. The check requires jitter to
+  rise and records its size against 2σ/√π until we know which jitter the NTG reports.
+- **T18b runs duplication and reordering separately** (1 % each), so a miscount points at its
+  cause. Enforced: no negative loss, received ≤ sent + duplicates. How the NTG counts them is
+  recorded (the plan asked to "note how it counts them").
+- **T19a's outage timing is recorded, not enforced**: the emulator's outage clock starts when
+  Emulation turns on, not with the run. Enforced: run saved, dark seconds seen, NTG lost = emulator drops.
+- **T19c is "honest tail"**: `tail-not-settled` must be set exactly when frames were in flight.
+- **T20 re-types each preset's values into the form** rather than running the preset path
+  itself, so the bench checks the emulator stored them; presets reorder frames (LTE 0.01 %, GEO
+  may reorder), so their loss checks are recorded, not enforced.
+- **T21 uses endpoints, not Default Actions**; an endpoint needs an IP address (the form silently
+  saves nothing without one) and a transport port range (without one its protocol doesn't
+  classify, and the first endpoint caught both streams on the first hardware run).
+
+**Hardware results (2026-10-19, NTG 5.0.12, emulator .213 Engine 2), one run each:**
+- **Pass:** T16a 1 % / 5 % and T17a / T17b (the clean re-runs owed from 10-16), T18a jitter, T18b
+  duplication and reordering, T19a outage, T19b change mid-run, T20 4G LTE / GEO / 802.11n,
+  T21 per-stream paths.
+- **T19c fails, reproduced 2/2, a product finding:** with 2 s of delay the NTG counts about 5 % of
+  delivered frames as lost and still saves `tail-not-settled: false` (netropy-ui-findings.md,
+  2026-10-19 #4). Left failing on purpose; mark it in known_issues.py once Travis confirms.
+- T19b: per-second latency sat at 10 ms before the edit and 100 ms after it; the run survived.
+- T21: UDP got exactly its 2 % loss with no added latency, TCP exactly +30.0 ms with no loss, and the
+  emulator's per-path frames match the NTG's per-stream frames to within 2.
+- T18a: NTG jitter 0.051 ms for σ 5 ms (frames kept in order); see findings #5.
+- Library fixes found on hardware: 5.0.12 omits `avg-jitter` when it is zero; endpoints need a
+  transport port range or the protocol doesn't classify; the NTG's 32-frame bursts queue at a low
+  cap (`burst_queue_ms`, findings #6), now part of T20's expected latency.
 
 **Golden overnight candidates:** T15a, T16a, T17a, T19a, plus one preset.
 Together they cover delay, loss, rate, robustness and a realistic bundle in
